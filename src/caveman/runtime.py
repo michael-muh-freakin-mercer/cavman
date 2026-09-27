@@ -19,7 +19,7 @@ DEFAULT_WORKER_MODEL = "moonshotai/kimi-k3"
 
 
 class RuntimeConfigurationError(ValueError):
-    """Raised when Walter's provider configuration is missing or invalid."""
+    """Raised when Caveman's provider configuration is missing or invalid."""
 
 
 def _normalize_base_url(value: str) -> str:
@@ -67,12 +67,12 @@ class RuntimeConfig:
     def from_env(cls, env: Mapping[str, str] | None = None) -> "RuntimeConfig":
         values = os.environ if env is None else env
         provider = values.get(
-            "WALTER_MODEL_PROVIDER",
-            values.get("WALTER_PROVIDER", "openrouter"),
+            "CAVEMAN_MODEL_PROVIDER",
+            values.get("CAVEMAN_PROVIDER", "openrouter"),
         ).strip().lower()
         if provider != "openrouter":
             raise RuntimeConfigurationError(
-                f"Unsupported WALTER_MODEL_PROVIDER={provider!r}; only 'openrouter' is supported."
+                f"Unsupported CAVEMAN_MODEL_PROVIDER={provider!r}; only 'openrouter' is supported."
             )
 
         api_key = values.get("OPENROUTER_API_KEY", "").strip()
@@ -95,18 +95,18 @@ class RuntimeConfig:
                 "OPENROUTER_BASE_URL must be an absolute HTTPS URL."
             )
 
-        manager_model = values.get("WALTER_MODEL", DEFAULT_MANAGER_MODEL).strip()
-        worker_model = values.get("WALTER_WORKER_MODEL", DEFAULT_WORKER_MODEL).strip()
+        manager_model = values.get("CAVEMAN_MODEL", DEFAULT_MANAGER_MODEL).strip()
+        worker_model = values.get("CAVEMAN_WORKER_MODEL", DEFAULT_WORKER_MODEL).strip()
         if not manager_model or not worker_model:
             raise RuntimeConfigurationError(
-                "WALTER_MODEL and WALTER_WORKER_MODEL must both be non-empty."
+                "CAVEMAN_MODEL and CAVEMAN_WORKER_MODEL must both be non-empty."
             )
 
         budget_values = {
-            "max_calls": _optional_non_negative_int(values, "WALTER_MAX_MODEL_CALLS"),
-            "max_input_tokens": _optional_non_negative_int(values, "WALTER_MAX_INPUT_TOKENS"),
-            "max_output_tokens": _optional_non_negative_int(values, "WALTER_MAX_OUTPUT_TOKENS"),
-            "max_total_tokens": _optional_non_negative_int(values, "WALTER_MAX_TOTAL_TOKENS"),
+            "max_calls": _optional_non_negative_int(values, "CAVEMAN_MAX_MODEL_CALLS"),
+            "max_input_tokens": _optional_non_negative_int(values, "CAVEMAN_MAX_INPUT_TOKENS"),
+            "max_output_tokens": _optional_non_negative_int(values, "CAVEMAN_MAX_OUTPUT_TOKENS"),
+            "max_total_tokens": _optional_non_negative_int(values, "CAVEMAN_MAX_TOTAL_TOKENS"),
         }
         budget = (
             UsageBudget(**budget_values)
@@ -114,10 +114,10 @@ class RuntimeConfig:
             else None
         )
 
-        worker_max_turns = _optional_non_negative_int(values, "WALTER_WORKER_MAX_TURNS")
+        worker_max_turns = _optional_non_negative_int(values, "CAVEMAN_WORKER_MAX_TURNS")
         if worker_max_turns is not None and worker_max_turns < 1:
             raise RuntimeConfigurationError(
-                "WALTER_WORKER_MAX_TURNS must be at least 1."
+                "CAVEMAN_WORKER_MAX_TURNS must be at least 1."
             )
 
         return cls(provider, api_key, base_url, manager_model, worker_model, budget,
@@ -166,7 +166,7 @@ def _openrouter_model(model_name: str, config: RuntimeConfig) -> OpenAIChatCompl
 def build_models(config: RuntimeConfig) -> tuple[OpenAIChatCompletionsModel, OpenAIChatCompletionsModel]:
     if config.provider != "openrouter":
         raise RuntimeConfigurationError(
-            f"Unsupported WALTER_MODEL_PROVIDER={config.provider!r}; only 'openrouter' is supported."
+            f"Unsupported CAVEMAN_MODEL_PROVIDER={config.provider!r}; only 'openrouter' is supported."
         )
     set_tracing_disabled(True)
     return (
@@ -207,8 +207,8 @@ def _trace_sensitive_enabled() -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
-def build_walter(controller) -> Agent:
-    """Build the Walter Manager using the repository doctrine plus the Agents SDK adapter."""
+def build_caveman(controller) -> Agent:
+    """Build the Caveman Manager using the repository doctrine plus the Agents SDK adapter."""
 
     config = RuntimeConfig.from_env()
     manager_model, _ = build_models(config)
@@ -220,7 +220,7 @@ def build_walter(controller) -> Agent:
         budget=config.budget,
     )
     return _agent(
-        name="Walter",
+        name="Caveman",
         instructions=controller.instructions(),
         tools=controller.tools(),
         model=manager_model,

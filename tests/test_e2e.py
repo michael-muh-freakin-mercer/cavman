@@ -7,12 +7,12 @@ from agents import Runner, set_tracing_disabled
 from agents.items import ToolCallOutputItem
 
 from fakes import message_step, responder_step, scripted_model, tool_step
-from walter import runtime
-from walter.adapter import INITIAL_COMPLETION_CRITERION, DurableController
-from walter.contracts import TaskPacket
-from walter.models import CapabilityProfile, FailureClass, TaskNode, TaskStatus
-from walter.orchestration import Orchestrator
-from walter.store import SQLiteStore
+from caveman import runtime
+from caveman.adapter import INITIAL_COMPLETION_CRITERION, DurableController
+from caveman.contracts import TaskPacket
+from caveman.models import CapabilityProfile, FailureClass, TaskNode, TaskStatus
+from caveman.orchestration import Orchestrator
+from caveman.store import SQLiteStore
 
 CRITERION = "Demo artifact accepted with trusted validation and independent review evidence"
 
@@ -90,7 +90,7 @@ def test_durable_manager_loop_completes_offline(tmp_path, monkeypatch):
                         classmethod(lambda cls: _offline_config()))
     monkeypatch.setattr(runtime, "build_models", lambda config: (manager, worker))
 
-    agent = runtime.build_walter(controller)
+    agent = runtime.build_caveman(controller)
     result = asyncio.run(Runner.run(agent, input="Run the offline demo", max_turns=20))
 
     assert result.final_output == "Run completed; demo artifact accepted."
@@ -213,7 +213,7 @@ def test_kernel_refuses_out_of_order_manager_calls_and_the_run_still_completes(t
                         classmethod(lambda cls: _offline_config()))
     monkeypatch.setattr(runtime, "build_models", lambda config: (manager, worker))
 
-    agent = runtime.build_walter(controller)
+    agent = runtime.build_caveman(controller)
     result = asyncio.run(Runner.run(agent, input="Drive the gates out of order", max_turns=30))
 
     # Every scripted step ran, so no refusal aborted the run.

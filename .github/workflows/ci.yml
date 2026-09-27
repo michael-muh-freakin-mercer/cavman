@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Install the isolation backend and the system interpreter
-        # Walter's sandbox fails closed without bubblewrap and libseccomp, so the
+        # Caveman's sandbox fails closed without bubblewrap and libseccomp, so the
         # sandbox tests cannot run at all on a runner that lacks them.
         run: |
           sudo apt-get update
@@ -45,7 +45,7 @@ jobs:
           python3 -c "import ctypes; ctypes.CDLL('libseccomp.so.2'); print('libseccomp resolves')"
           ls -ld /lib /lib64 /usr/lib64 || true
 
-      - name: Install Walter
+      - name: Install Caveman
         # Deliberately the distribution interpreter, not a toolcache one. The
         # sandbox binds /usr into an environment-cleared namespace, so the
         # interpreter has to be self-contained under that tree; toolcache builds

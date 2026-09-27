@@ -193,6 +193,28 @@ class Artifact(Model):
     created_at: str = Field(default_factory=now)
 
 
+class ProjectVerification(Model):
+    """Trusted evidence that the assembled product actually runs.
+
+    Distinct from ``ArtifactValidation``, which proves one candidate satisfied
+    its own declared checks. A run can hold nothing but passing validations and
+    still deliver a product that will not start, so completion additionally
+    requires verification recorded against the integrated workspace. Produced
+    only by trusted sandbox execution, never from a model's claim.
+    """
+    id: str = Field(default_factory=uid)
+    kind: str = Field(min_length=1)
+    task_id: str
+    workspace_id: str
+    workspace_fingerprint: str | None = None
+    argv: list[str] = Field(default_factory=list)
+    passed: bool
+    returncode: int | None = None
+    evidence: str = Field(min_length=1)
+    verifier_id: str = Field(min_length=1)
+    created_at: str = Field(default_factory=now)
+
+
 class Decision(Model):
     id: str = Field(default_factory=uid)
     action: str
@@ -339,6 +361,7 @@ class Run(Model):
     decisions: list[Decision] = Field(default_factory=list)
     usage_records: list[ModelUsageRecord] = Field(default_factory=list)
     acceptances: list[AcceptanceDecision] = Field(default_factory=list)
+    verifications: list[ProjectVerification] = Field(default_factory=list)
     failures: list[WorkerFailure] = Field(default_factory=list)
     recoveries: list[RecoveryDecision] = Field(default_factory=list)
     approvals: dict[str, ApprovalRequest] = Field(default_factory=dict)

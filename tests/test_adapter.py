@@ -9,17 +9,17 @@ import pytest
 
 pytest.importorskip("agents")
 
-from walter.adapter import (DurableController, INITIAL_COMPLETION_CRITERION,
+from caveman.adapter import (DurableController, INITIAL_COMPLETION_CRITERION,
                             ReviewResult)
-from walter.contracts import TaskPacket, WorkerResult
-from walter.models import (CapabilityProfile, CapabilityRequestStatus, FailureClass,
+from caveman.contracts import TaskPacket, WorkerResult
+from caveman.models import (CapabilityProfile, CapabilityRequestStatus, FailureClass,
                            ReplanProposal, TaskNode)
-from walter.orchestration import GateError, Orchestrator
-from walter.sandbox import CommandResult, WorkspaceManager
-from walter.store import SQLiteStore
-from walter.adapter import workspace_tools
-from walter.adapter import load_system_prompt
-from walter.adapter import DURABLE_INSTRUCTIONS
+from caveman.orchestration import GateError, Orchestrator
+from caveman.sandbox import CommandResult, WorkspaceManager
+from caveman.store import SQLiteStore
+from caveman.adapter import workspace_tools
+from caveman.adapter import load_system_prompt
+from caveman.adapter import DURABLE_INSTRUCTIONS
 
 
 def packet(task_id="task"):
@@ -396,7 +396,7 @@ def test_model_read_path_stays_bounded_as_a_run_grows():
 
 
 def test_evidence_excerpt_keeps_the_failing_tail():
-    from walter.adapter import MAX_EVIDENCE_EXCERPT_CHARS, _excerpt
+    from caveman.adapter import MAX_EVIDENCE_EXCERPT_CHARS, _excerpt
 
     short = "compile passed"
     assert _excerpt(short) == short
@@ -465,7 +465,7 @@ def test_researcher_capability_receives_only_runtime_search_grant(monkeypatch):
     controller = controller_for(task)
     marker = object()
     observed = {}
-    monkeypatch.setattr("walter.adapter.runtime._tools_for", lambda policy: [marker] if policy == "web_search" else [])
+    monkeypatch.setattr("caveman.adapter.runtime._tools_for", lambda policy: [marker] if policy == "web_search" else [])
 
     async def fake_invoke(**kwargs):
         observed.update(kwargs)
@@ -1075,7 +1075,7 @@ def test_repo_reader_escalation_reuses_exact_workspace_with_read_only_tools(tmp_
 def test_controller_instructions_combine_prompt_appendix_and_run_id():
     controller = controller_for(TaskNode(packet=packet(), required_checks=["result_schema"]))
     instructions = controller.instructions()
-    assert ("You are **Walter**, a general-purpose orchestration Manager."
+    assert ("You are **Caveman**, a general-purpose orchestration Manager."
             in instructions)
     assert DURABLE_INSTRUCTIONS in instructions
     assert instructions.endswith("Run ID: " + controller.run_id)
@@ -1091,17 +1091,17 @@ def test_load_system_prompt_returns_repo_prompt_stripped_and_non_empty():
 
 
 def test_load_system_prompt_missing_file_raises_runtime_error(monkeypatch, tmp_path):
-    fake_module = tmp_path / "src" / "walter" / "adapter.py"
+    fake_module = tmp_path / "src" / "caveman" / "adapter.py"
     fake_module.parent.mkdir(parents=True)
-    monkeypatch.setattr("walter.adapter.Path", lambda *_: fake_module)
-    with pytest.raises(RuntimeError, match="Walter system prompt not found"):
+    monkeypatch.setattr("caveman.adapter.Path", lambda *_: fake_module)
+    with pytest.raises(RuntimeError, match="Caveman system prompt not found"):
         load_system_prompt()
 
 
 def test_invoke_passes_configured_budget_to_worker_model(monkeypatch):
-    from walter import runtime
-    from walter.usage import UsageBudget
-    from walter.usage_model import UsageRecordingModel
+    from caveman import runtime
+    from caveman.usage import UsageBudget
+    from caveman.usage_model import UsageRecordingModel
 
     controller = controller_for(TaskNode(packet=packet(), required_checks=["result_schema"]))
     budget = UsageBudget(max_calls=5)
@@ -1123,7 +1123,7 @@ def test_invoke_passes_configured_budget_to_worker_model(monkeypatch):
     async def fake_run(*args, **kwargs):
         return Result()
 
-    monkeypatch.setattr("walter.adapter.Runner.run", fake_run)
+    monkeypatch.setattr("caveman.adapter.Runner.run", fake_run)
 
     asyncio.run(controller._invoke(
         name="Worker", instructions="do the task", output_type=str, tools=[],
@@ -1135,9 +1135,9 @@ def test_invoke_passes_configured_budget_to_worker_model(monkeypatch):
 
 
 def test_invoke_resolves_configuration_once_per_controller(monkeypatch):
-    from walter import runtime
-    from walter.usage import UsageBudget
-    from walter.usage_model import UsageRecordingModel
+    from caveman import runtime
+    from caveman.usage import UsageBudget
+    from caveman.usage_model import UsageRecordingModel
 
     controller = controller_for(TaskNode(packet=packet(), required_checks=["result_schema"]))
     budget = UsageBudget(max_calls=5)
@@ -1160,7 +1160,7 @@ def test_invoke_resolves_configuration_once_per_controller(monkeypatch):
     async def fake_run(*args, **kwargs):
         return Result()
 
-    monkeypatch.setattr("walter.adapter.Runner.run", fake_run)
+    monkeypatch.setattr("caveman.adapter.Runner.run", fake_run)
 
     for _ in range(2):
         asyncio.run(controller._invoke(
@@ -1327,9 +1327,9 @@ def test_failed_attempt_workspace_is_dirty_and_retry_gets_a_fresh_one(tmp_path, 
 
 
 def test_concurrent_update_is_retried_once_then_translated(monkeypatch):
-    """A cross-operator collision (e.g. `walter run approve` mid-run) must not
+    """A cross-operator collision (e.g. `caveman run approve` mid-run) must not
     reach the Manager as an opaque tool error (2026-09-21 decision)."""
-    from walter.store import ConcurrentUpdate
+    from caveman.store import ConcurrentUpdate
 
     controller = controller_for(TaskNode(packet=packet(), required_checks=["result_schema"]))
     tools = {tool.name: tool for tool in controller.tools()}

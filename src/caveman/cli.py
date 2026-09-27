@@ -12,7 +12,7 @@ from pathlib import Path
 from agents import RunConfig, Runner, SQLiteSession, trace
 from dotenv import load_dotenv
 
-from .runtime import RuntimeConfig, RuntimeConfigurationError, build_walter
+from .runtime import RuntimeConfig, RuntimeConfigurationError, build_caveman
 from .adapter import INITIAL_COMPLETION_CRITERION
 from .usage import UsageBudgetExceeded
 
@@ -24,18 +24,18 @@ DEFAULT_MAX_TURNS = 30
 def _session_db() -> str:
     local_dir = Path.cwd() / ".local"
     local_dir.mkdir(parents=True, exist_ok=True)
-    return str(local_dir / "walter-sessions.db")
+    return str(local_dir / "caveman-sessions.db")
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="walter",
-        description="Run Walter, the general-purpose orchestration Manager.",
+        prog="caveman",
+        description="Run Caveman, the general-purpose orchestration Manager.",
     )
     parser.add_argument(
         "goal",
         nargs="*",
-        help="Optional one-shot goal. Omit it to start an interactive Walter session.",
+        help="Optional one-shot goal. Omit it to start an interactive Caveman session.",
     )
     parser.add_argument(
         "--session",
@@ -69,24 +69,24 @@ def _configure_trace_privacy(_include_sensitive: bool) -> None:
 
 
 async def _execute(
-    walter,
+    caveman,
     goal: str,
     *,
     session=None,
     session_id: str | None = None,
     max_turns: int,
 ):
-    metadata = {"runtime": "agents-sdk", "manager": "Walter"}
+    metadata = {"runtime": "agents-sdk", "manager": "Caveman"}
     include_sensitive = (
         os.getenv("OPENAI_AGENTS_TRACE_INCLUDE_SENSITIVE_DATA", "0") == "1"
     )
     with trace(
-        "Walter orchestration",
+        "Caveman orchestration",
         group_id=session_id,
         metadata=metadata,
     ) as workflow_trace:
         result = await Runner.run(
-            walter,
+            caveman,
             goal,
             session=session,
             max_turns=max_turns,
@@ -114,7 +114,7 @@ def _print_manager_output(result) -> None:
 def _report_usage_budget_exceeded(exc: UsageBudgetExceeded) -> None:
     print(
         f"Usage budget exceeded: {exc}. The run remains incomplete. "
-        "Raise the WALTER_MAX_* budget to continue."
+        "Raise the CAVEMAN_MAX_* budget to continue."
     )
 
 
@@ -125,7 +125,7 @@ async def _run_once(goal: str, session_id: str | None, max_turns: int) -> None:
     try:
         session = SQLiteSession(session_id, _session_db()) if session_id else None
         result, trace_id = await _execute(
-            build_walter(controller), goal, session=session,
+            build_caveman(controller), goal, session=session,
             session_id=session_id, max_turns=max_turns,
         )
         _print_outcome(controller)
@@ -142,7 +142,7 @@ async def _run_once(goal: str, session_id: str | None, max_turns: int) -> None:
 async def _run_interactive(session_id: str, max_turns: int) -> None:
     session = SQLiteSession(session_id, _session_db())
 
-    print(f"Walter ready. Session: {session_id}")
+    print(f"Caveman ready. Session: {session_id}")
     print("Commands: :new starts a fresh run, :clear resets this conversation, :quit exits.")
     print("Follow-up messages continue the current run until it completes.")
     print("Operational state is durable. Provider trace export is disabled.")
@@ -156,7 +156,7 @@ async def _run_interactive(session_id: str, max_turns: int) -> None:
     try:
         while True:
             try:
-                goal = input("\nwalter> ").strip()
+                goal = input("\ncaveman> ").strip()
             except (EOFError, KeyboardInterrupt):
                 print()
                 return
@@ -182,7 +182,7 @@ async def _run_interactive(session_id: str, max_turns: int) -> None:
                     controller = _controller(goal)
                     print(f"Run ID: {controller.run_id}")
                 result, trace_id = await _execute(
-                    build_walter(controller), goal, session=session,
+                    build_caveman(controller), goal, session=session,
                     session_id=session_id, max_turns=max_turns,
                 )
                 _print_outcome(controller)
@@ -194,7 +194,7 @@ async def _run_interactive(session_id: str, max_turns: int) -> None:
             except KeyboardInterrupt:
                 print("\nRun interrupted.")
             except RuntimeConfigurationError as exc:
-                print(f"Walter configuration error: {exc}")
+                print(f"Caveman configuration error: {exc}")
             except UsageBudgetExceeded as exc:
                 _report_usage_budget_exceeded(exc)
     finally:
@@ -208,7 +208,7 @@ def _store():
     from .store import SQLiteStore
     directory = Path.cwd() / ".local"
     directory.mkdir(parents=True, exist_ok=True)
-    return SQLiteStore(directory / "walter-operations.db")
+    return SQLiteStore(directory / "caveman-operations.db")
 
 
 def _controller(goal=None, run_id=None):
@@ -234,7 +234,7 @@ def _print_outcome(controller):
     elif run.status == "abandoned":
         print("Run was abandoned offline. Durable tasks, decisions and events remain readable.")
     else:
-        print("Run is not complete. Inspect durable tasks, blockers, and approvals with walter run inspect " + run.id)
+        print("Run is not complete. Inspect durable tasks, blockers, and approvals with caveman run inspect " + run.id)
 
 
 async def _resume(run_id, max_turns):
@@ -251,7 +251,7 @@ async def _resume_and_execute(run_id, max_turns):
     controller = _controller(run_id=run_id)
     try:
         controller.core.resume(run_id)
-        result, _ = await _execute(build_walter(controller),
+        result, _ = await _execute(build_caveman(controller),
             "Continue this durable run from its persisted state. Inspect it first; recover interrupted assignments explicitly.",
             max_turns=max_turns)
         _print_outcome(controller)
@@ -328,7 +328,7 @@ def _abandon(run_id: str, reason: str) -> None:
 
 
 def _operations(argv):
-    parser = argparse.ArgumentParser(prog="walter run")
+    parser = argparse.ArgumentParser(prog="caveman run")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("list")
     for name in ("inspect", "events", "resume"):
@@ -393,7 +393,7 @@ def main() -> None:
         try:
             _operations(sys.argv[2:])
         except (KeyError, ValueError, RuntimeError) as exc:
-            raise SystemExit(f"Walter operation error: {exc}") from exc
+            raise SystemExit(f"Caveman operation error: {exc}") from exc
         return
     args = _parser().parse_args()
     _configure_trace_privacy(args.trace_sensitive)
@@ -408,7 +408,7 @@ def main() -> None:
             return
         asyncio.run(_run_interactive(args.session or DEFAULT_SESSION, args.max_turns))
     except RuntimeConfigurationError as exc:
-        raise SystemExit(f"Walter configuration error: {exc}") from exc
+        raise SystemExit(f"Caveman configuration error: {exc}") from exc
 
 
 if __name__ == "__main__":

@@ -103,31 +103,31 @@ SECRET_NAMES = frozenset({
 SAFE_ENV_SUFFIXES = (".example", ".sample", ".template")
 SECRET_SUFFIXES = (".pem", ".p12", ".pfx")
 
-# These files define Walter's safety/authority boundary.  They remain readable,
+# These files define Caveman's safety/authority boundary.  They remain readable,
 # testable, diffable and fingerprinted, but ordinary developer grants cannot
 # mutate them.  A Manager must create a separate signed grant bound to an exact
 # human approval digest to authorize a safety-boundary candidate.
 #
 # The set is every doctrine file plus every control-plane module: anything that
-# decides authority, cost, the worker contract, or how Walter is launched.
+# decides authority, cost, the worker contract, or how Caveman is launched.
 SAFETY_PATHS = frozenset({
     "AGENTS.md", "SYSTEM_PROMPT.md", "PERMISSIONS.md", "AGENT_CREATION.md",
     "QA_PROTOCOL.md", "FAILURE_RECOVERY.md", "TOOLS.md", "TASK_PROTOCOL.md",
     "OPERATING_MODEL.md", "STATE_MODEL.md", "CHARTER.md",
-    "src/walter/sandbox.py", "src/walter/orchestration.py", "src/walter/models.py",
-    "src/walter/store.py", "src/walter/adapter.py", "src/walter/runtime.py",
-    "src/walter/cli.py", "src/walter/readiness.py",
+    "src/caveman/sandbox.py", "src/caveman/orchestration.py", "src/caveman/models.py",
+    "src/caveman/store.py", "src/caveman/adapter.py", "src/caveman/runtime.py",
+    "src/caveman/cli.py", "src/caveman/readiness.py",
     # Cost control, the worker/task contract, the package surface, and the
     # console-script/dependency declaration are authority boundaries too: a
     # candidate that quietly disables the usage budget, widens the worker
-    # contract, or repoints the `walter` entrypoint must be as conspicuous as
+    # contract, or repoints the `caveman` entrypoint must be as conspicuous as
     # one that edits the kernel.
-    "src/walter/usage.py", "src/walter/usage_model.py", "src/walter/contracts.py",
-    "src/walter/__init__.py", "pyproject.toml",
+    "src/caveman/usage.py", "src/caveman/usage_model.py", "src/caveman/contracts.py",
+    "src/caveman/__init__.py", "pyproject.toml",
 })
 
 # Inventory limits raised 2026-09-21 so ordinary repositories fit: the old
-# 2 MB / 10k-file bounds capped Walter at toy projects. Symlinks remain
+# 2 MB / 10k-file bounds capped Caveman at toy projects. Symlinks remain
 # forbidden — making them safe is a separate security design decision.
 MAX_FILE_BYTES = 50_000_000
 MAX_FILES = 100_000
@@ -138,11 +138,18 @@ MAX_AGGREGATE_RSS = 1_073_741_824
 MAX_OUTPUT_BYTES = 1_000_000
 
 
-AST_CHECK_SNIPPETS = frozenset({
-    "import ast,pathlib; files=list(pathlib.Path('.').rglob('*.py')); assert files, 'No Python sources'; [ast.parse(p.read_text(), filename=str(p)) for p in files]",
+# The canonical AST parse check. Callers should use this constant rather than
+# repeating the literal; the set below exists only because the same snippet has
+# been written with two different whitespace layouts in persisted history.
+AST_CHECK = (
     "import ast,pathlib; files=list(pathlib.Path('.').rglob('*.py')); "
     "assert files, 'No Python sources'; "
-    "[ast.parse(p.read_text(), filename=str(p)) for p in files]",
+    "[ast.parse(p.read_text(), filename=str(p)) for p in files]"
+)
+
+AST_CHECK_SNIPPETS = frozenset({
+    "import ast,pathlib; files=list(pathlib.Path('.').rglob('*.py')); assert files, 'No Python sources'; [ast.parse(p.read_text(), filename=str(p)) for p in files]",
+    AST_CHECK,
 })
 
 ISOLATION_PROBE = r'''import os, socket
@@ -150,7 +157,7 @@ from pathlib import Path
 assert not Path('/workspace/.git').exists()
 assert not Path('/workspace/.env').exists()
 assert 'FIXTURE_PRIVATE_ENV' not in os.environ
-for path in ('/workspace/__probe_write', '/usr/__probe_write', '/opt/walter-env/__probe_write'):
+for path in ('/workspace/__probe_write', '/usr/__probe_write', '/opt/caveman-env/__probe_write'):
     try: Path(path).write_text('bad')
     except OSError: pass
     else: raise AssertionError('write available: ' + path)
@@ -165,6 +172,32 @@ PY_COMPILE = (
     "import pathlib,py_compile,sys; out=pathlib.Path('/tmp/pycompile'); "
     "out.mkdir(); [py_compile.compile(path, cfile=str(out / (str(index)+'.pyc')), doraise=True) "
     "for index,path in enumerate(sys.argv[1:])]"
+)
+
+# Project-level import smoke test. Fixed and Manager-defined, exactly like the
+# AST check snippets: the model never supplies or edits this code, it only names
+# the `import_smoke` verification kind. Catches the failure mode where every
+# file exists and every unit test passes but the product cannot start, which
+# task-level checks cannot see.
+IMPORT_SMOKE = (
+    "import importlib,pathlib,sys\n"
+    "sys.path.insert(0,'.')\n"
+    "skip=('test_','conftest','setup')\n"
+    "roots=[]\n"
+    "for p in sorted(pathlib.Path('.').iterdir()):\n"
+    "    n=p.name\n"
+    "    if n.startswith('.') or n.startswith('_') or n.startswith(skip): continue\n"
+    "    if p.suffix=='.py': roots.append(p.stem)\n"
+    "    elif p.is_dir() and (p/'__init__.py').exists(): roots.append(n)\n"
+    "if not roots:\n"
+    "    print('no importable Python module at the project root'); raise SystemExit(1)\n"
+    "failed=[]\n"
+    "for name in roots:\n"
+    "    try: importlib.import_module(name)\n"
+    "    except BaseException as exc: failed.append(name+': '+type(exc).__name__+': '+str(exc))\n"
+    "if failed:\n"
+    "    print('IMPORT FAILURES'); [print(' ',f) for f in failed]; raise SystemExit(1)\n"
+    "print('imported: '+', '.join(roots))\n"
 )
 
 NETWORK_SYSCALLS = (
@@ -462,7 +495,7 @@ class WorkspaceManager:
         with self._lock:
             ident = uuid.uuid4().hex
             root = self.state_root / ("candidate-" + ident)
-            branch = "walter-candidate/" + ident
+            branch = "caveman-candidate/" + ident
             base = base_revision or self._git(
                 "-C", str(self.repository), "rev-parse", "HEAD").strip()
             self._git("-C", str(self.repository), "worktree", "add", "-b", branch, str(root), base)
@@ -511,7 +544,7 @@ class WorkspaceManager:
     def _verify_grant_shape(self, grant: WorkspaceGrant):
         expected_root = self.state_root / ("candidate-" + grant.candidate_id)
         if (grant.repository != str(self.repository) or grant.root != str(expected_root) or
-                grant.branch != "walter-candidate/" + grant.candidate_id or
+                grant.branch != "caveman-candidate/" + grant.candidate_id or
                 not grant.run_id or not grant.task_id or not grant.worker_id or not grant.author_id or
                 grant.prohibited_roots != (str(self.repository),)):
             raise SandboxViolation("Workspace grant binding is invalid")
@@ -768,7 +801,7 @@ class WorkspaceManager:
     def _command(self, grant: WorkspaceGrant, category: str, argv: list[str]) -> list[str]:
         if category not in grant.command_categories or not argv:
             raise SandboxViolation("Command category denied")
-        python = "/opt/walter-env/bin/python"
+        python = "/opt/caveman-env/bin/python"
         executable = Path(argv[0]).name
         rest = argv[1:]
         if category == "isolation_probe" and argv == ["sandbox-probe"]:
@@ -776,6 +809,8 @@ class WorkspaceManager:
         if executable not in {"python", "python3"}:
             raise SandboxViolation("Only the immutable Python environment is executable")
         if category in {"test", "check"} and len(rest) == 2 and rest[0] == "-c" and rest[1] in AST_CHECK_SNIPPETS:
+            return [python, *rest]
+        if category == "check" and rest == ["-c", IMPORT_SMOKE]:
             return [python, *rest]
         if category == "test" and len(rest) >= 2 and rest[:2] == ["-m", "pytest"]:
             allowed = {"-q", "-x", "--maxfail=1", "-p", "no:cacheprovider"}
@@ -901,8 +936,8 @@ class WorkspaceManager:
                     "--symlink", "usr/lib", "/lib", "--symlink", _loader_dir_target(), "/lib64",
                     "--proc", "/proc", "--dev", "/dev", "--bind", str(scratch), "/tmp",
                     "--ro-bind", str(snapshot), "/workspace",
-                    "--ro-bind", str(dependency), "/opt/walter-env", "--chdir", "/workspace",
-                    "--clearenv", "--setenv", "PATH", "/opt/walter-env/bin:/usr/bin:/bin",
+                    "--ro-bind", str(dependency), "/opt/caveman-env", "--chdir", "/workspace",
+                    "--clearenv", "--setenv", "PATH", "/opt/caveman-env/bin:/usr/bin:/bin",
                     "--setenv", "HOME", "/tmp", "--setenv", "PYTHONPATH", "/workspace/src",
                     "--setenv", "PYTHONDONTWRITEBYTECODE", "1", "--seccomp", str(network_filter.fileno()), "--",
                     "/usr/bin/prlimit", "--as=1073741824", "--cpu=60", "--fsize=8388608",
@@ -946,7 +981,7 @@ class WorkspaceManager:
         Every step is conditional so retirement is idempotent and survives a
         worktree that was removed out of band: such a candidate still leaves a
         branch and a prunable worktree registration behind. Only
-        ``walter-candidate/<candidate_id>`` branches and worktrees under this
+        ``caveman-candidate/<candidate_id>`` branches and worktrees under this
         manager's own state root are ever touched; the live checkout is not
         reachable from here.
         """

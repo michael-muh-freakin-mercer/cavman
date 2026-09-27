@@ -1,4 +1,4 @@
-"""Offline milestone-six demonstration of Walter's self-build safety boundary.
+"""Offline milestone-six demonstration of Caveman's self-build safety boundary.
 
 The fixture uses the real durable kernel and workspace executor.  Its author and
 reviewer are deterministic local fixtures, so proving orchestration correctness
@@ -72,7 +72,7 @@ class _OfflineReviewer:
 def _default_store_path(repository: Path) -> Path:
     directory = repository / ".local"
     directory.mkdir(parents=True, exist_ok=True)
-    return directory / "walter-operations.db"
+    return directory / "caveman-operations.db"
 
 
 def run_readiness_demo(
@@ -94,7 +94,7 @@ def run_readiness_demo(
         core = Orchestrator(store, manager_id="offline-readiness-manager")
         criterion = "A harmless isolated candidate passes trusted validation and independent review"
         run = core.create_run(
-            "Demonstrate Walter self-build readiness without promoting candidate code",
+            "Demonstrate Caveman self-build readiness without promoting candidate code",
             [criterion],
             constraints=[
                 "offline provider fixture only",
@@ -130,7 +130,7 @@ def run_readiness_demo(
         assignment = core.delegate(run.id, task_id, author_id)
         core.start(run.id, task_id)
 
-        marker = f"\n<!-- walter-readiness-fixture:{run.id} -->\n"
+        marker = f"\n<!-- caveman-readiness-fixture:{run.id} -->\n"
         original = workspace_manager.read_file(grant.id, "README.md", worker_id=author_id)
         workspace_manager.write_file(grant.id, "README.md", original.rstrip() + marker,
                                      worker_id=author_id)
@@ -217,7 +217,7 @@ def run_readiness_demo(
             "Human must inspect and authorize this exact candidate before promotion",
             category="candidate_promotion",
             target="stable/main",
-            risk="Promotion would modify canonical Walter project state",
+            risk="Promotion would modify canonical Caveman project state",
             artifact_refs=[artifact.id],
         )
     finally:

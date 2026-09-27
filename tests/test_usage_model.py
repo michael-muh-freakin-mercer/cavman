@@ -8,10 +8,10 @@ from agents import Usage
 from agents.items import ModelResponse
 from agents.model_settings import ModelSettings
 
-from walter.orchestration import Orchestrator
-from walter.store import SQLiteStore
-from walter.usage import UsageBudget, UsageBudgetExceeded
-from walter.usage_model import UsageRecordingModel
+from caveman.orchestration import Orchestrator
+from caveman.store import SQLiteStore
+from caveman.usage import UsageBudget, UsageBudgetExceeded
+from caveman.usage_model import UsageRecordingModel
 
 
 class StubModel:

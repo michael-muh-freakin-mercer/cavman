@@ -1,4 +1,4 @@
-from walter.usage import UsageBudget, UsageBudgetExceeded, token_counts, usage_mapping
+from caveman.usage import UsageBudget, UsageBudgetExceeded, token_counts, usage_mapping
 
 
 def test_fake_provider_usage_counts_are_normalized():

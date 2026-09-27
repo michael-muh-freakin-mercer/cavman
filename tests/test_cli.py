@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from walter import cli
-from walter.orchestration import Orchestrator
+from caveman import cli
+from caveman.orchestration import Orchestrator
 
 
 def setup_repository(tmp_path):
@@ -51,9 +51,9 @@ def test_offline_run_list_inspect_events_resume_and_approval(tmp_path, monkeypat
 
 
 def test_offline_abandon_closes_a_work_free_run_and_refuses_live_work(tmp_path, monkeypatch, capsys):
-    """`walter run abandon` is the offline, no-spend exit for stuck active runs."""
-    from walter.contracts import TaskPacket
-    from walter.models import TaskNode
+    """`caveman run abandon` is the offline, no-spend exit for stuck active runs."""
+    from caveman.contracts import TaskPacket
+    from caveman.models import TaskNode
 
     setup_repository(tmp_path)
     monkeypatch.chdir(tmp_path)
@@ -105,10 +105,10 @@ def test_one_shot_builds_manager_around_new_durable_run(monkeypatch, capsys):
 
     monkeypatch.setattr(cli, "_controller", make_controller)
     monkeypatch.setattr(cli.RuntimeConfig, "from_env", classmethod(lambda cls: object()))
-    monkeypatch.setattr(cli, "build_walter", lambda value: observed.setdefault("controller", value) or object())
+    monkeypatch.setattr(cli, "build_caveman", lambda value: observed.setdefault("controller", value) or object())
 
-    async def execute(walter, goal, **kwargs):
-        observed["walter"] = walter
+    async def execute(caveman, goal, **kwargs):
+        observed["caveman"] = caveman
         return object(), "trace"
 
     monkeypatch.setattr(cli, "_execute", execute)
@@ -137,9 +137,9 @@ def _stub_run_once(monkeypatch, observed, *, result):
 
     monkeypatch.setattr(cli, "_controller", lambda goal: Controller())
     monkeypatch.setattr(cli.RuntimeConfig, "from_env", classmethod(lambda cls: object()))
-    monkeypatch.setattr(cli, "build_walter", lambda value: object())
+    monkeypatch.setattr(cli, "build_caveman", lambda value: object())
 
-    async def execute(walter, goal, **kwargs):
+    async def execute(caveman, goal, **kwargs):
         return result, "trace"
 
     monkeypatch.setattr(cli, "_execute", execute)
@@ -229,8 +229,8 @@ def test_new_cli_run_requires_manager_defined_criteria(tmp_path, monkeypatch):
 def test_main_reports_missing_run_as_friendly_domain_error(tmp_path, monkeypatch):
     setup_repository(tmp_path)
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(cli.sys, "argv", ["walter", "run", "inspect", "missing-run"])
-    with pytest.raises(SystemExit, match="Walter operation error"):
+    monkeypatch.setattr(cli.sys, "argv", ["caveman", "run", "inspect", "missing-run"])
+    with pytest.raises(SystemExit, match="Caveman operation error"):
         cli.main()
 
 
@@ -248,8 +248,8 @@ def _run_with_approval(tmp_path, monkeypatch):
 def test_approve_unknown_approval_id_is_an_operation_error(tmp_path, monkeypatch):
     run, _ = _run_with_approval(tmp_path, monkeypatch)
     monkeypatch.setattr(cli.sys, "argv",
-                        ["walter", "run", "approve", run.id, "missing-approval", "--reason", "scope checked"])
-    with pytest.raises(SystemExit, match="Walter operation error"):
+                        ["caveman", "run", "approve", run.id, "missing-approval", "--reason", "scope checked"])
+    with pytest.raises(SystemExit, match="Caveman operation error"):
         cli.main()
 
 
@@ -259,8 +259,8 @@ def test_approve_already_decided_approval_is_an_operation_error(tmp_path, monkey
     Orchestrator(store).decide_approval(run.id, request.id, True, "human", "Already decided")
     store.close()
     monkeypatch.setattr(cli.sys, "argv",
-                        ["walter", "run", "approve", run.id, request.id, "--reason", "second decision"])
-    with pytest.raises(SystemExit, match="Walter operation error"):
+                        ["caveman", "run", "approve", run.id, request.id, "--reason", "second decision"])
+    with pytest.raises(SystemExit, match="Caveman operation error"):
         cli.main()
 
 
@@ -292,12 +292,12 @@ def _stub_usage_budget_path(monkeypatch, *, execute):
 
     monkeypatch.setattr(cli, "_controller", lambda *args, **kwargs: Controller())
     monkeypatch.setattr(cli.RuntimeConfig, "from_env", classmethod(lambda cls: object()))
-    monkeypatch.setattr(cli, "build_walter", lambda value: object())
+    monkeypatch.setattr(cli, "build_caveman", lambda value: object())
     monkeypatch.setattr(cli, "_execute", execute)
 
 
 def test_one_shot_reports_usage_budget_exceeded_and_exits_nonzero(monkeypatch, capsys):
-    async def execute(walter, goal, **kwargs):
+    async def execute(caveman, goal, **kwargs):
         raise cli.UsageBudgetExceeded("Model-call budget exhausted")
 
     _stub_usage_budget_path(monkeypatch, execute=execute)
@@ -336,13 +336,13 @@ def test_interactive_reports_usage_budget_exceeded_and_continues(monkeypatch, ca
         def close(self):
             observed["closed"] += 1
 
-    async def execute(walter, goal, **kwargs):
+    async def execute(caveman, goal, **kwargs):
         raise cli.UsageBudgetExceeded("Model-call budget exhausted")
 
     monkeypatch.setattr(cli, "SQLiteSession", Session)
     monkeypatch.setattr(cli, "_controller", lambda goal: Controller())
     monkeypatch.setattr(cli.RuntimeConfig, "from_env", classmethod(lambda cls: object()))
-    monkeypatch.setattr(cli, "build_walter", lambda value: object())
+    monkeypatch.setattr(cli, "build_caveman", lambda value: object())
     monkeypatch.setattr(cli, "_execute", execute)
 
     responses = iter(["first goal", ":quit"])
@@ -391,14 +391,14 @@ def test_interactive_followups_continue_the_current_run(monkeypatch, capsys):
 
     executed = []
 
-    async def execute(walter, goal, **kwargs):
+    async def execute(caveman, goal, **kwargs):
         executed.append(goal)
         return object(), "trace"
 
     monkeypatch.setattr(cli, "SQLiteSession", Session)
     monkeypatch.setattr(cli, "_controller", make_controller)
     monkeypatch.setattr(cli.RuntimeConfig, "from_env", classmethod(lambda cls: object()))
-    monkeypatch.setattr(cli, "build_walter", lambda value: object())
+    monkeypatch.setattr(cli, "build_caveman", lambda value: object())
     monkeypatch.setattr(cli, "_execute", execute)
 
     responses = iter(["first goal", "keep going", ":new", "fresh goal", ":quit"])
@@ -421,8 +421,8 @@ def _terminal_run_with_candidate(tmp_path, monkeypatch):
     current working directory, so building the run before chdir would write
     into whatever store the developer happens to be sitting in.
     """
-    from walter.models import Event
-    from walter.sandbox import WorkspaceManager
+    from caveman.models import Event
+    from caveman.sandbox import WorkspaceManager
 
     setup_repository(tmp_path)
     monkeypatch.chdir(tmp_path)
@@ -441,12 +441,12 @@ def _terminal_run_with_candidate(tmp_path, monkeypatch):
 
 def _branches(tmp_path):
     return subprocess.run(["git", "-C", str(tmp_path), "branch", "--list",
-                           "walter-candidate/*"], capture_output=True, text=True,
+                           "caveman-candidate/*"], capture_output=True, text=True,
                           check=True).stdout
 
 
 def test_cleanup_refuses_an_active_run_and_leaves_its_workspace(tmp_path, monkeypatch):
-    from walter.sandbox import WorkspaceManager
+    from caveman.sandbox import WorkspaceManager
 
     setup_repository(tmp_path)
     monkeypatch.chdir(tmp_path)

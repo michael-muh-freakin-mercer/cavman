@@ -11,7 +11,7 @@ from .contracts import WorkerResult
 from .models import (AcceptanceDecision, ApprovalDecision, ApprovalGate, ApprovalRequest, ApprovalStatus, Artifact,
     ArtifactValidation, BlockerReason, CapabilityProfile, CapabilityRequest, CapabilityRequestStatus, Event, FailureClass, ModelUsageRecord, RecoveryDecision,
     ReplanProposal, Review, Run, TaskNode, TaskStatus, WorkerAssignment, WorkerFailure,
-    WorkPlan, now)
+    WorkPlan, ProjectVerification, now)
 from .store import ConcurrentUpdate, SQLiteStore
 from .usage import token_counts, usage_mapping
 
@@ -25,6 +25,13 @@ class GateError(ValueError):
 # pre-existing suite, or both (2026-09-21 decision).
 EXECUTABLE_DEVELOPER_CHECKS = frozenset(
     {"compile", "pytest", "pytest_candidate", "pytest_regression"})
+
+# Project-level verification kinds. Each maps to one trusted, Manager-defined
+# sandbox command in the adapter; the model names a kind and never supplies the
+# command. These answer "does the assembled product work", which no per-task
+# check can: candidate-scoped pytest sees only changed tests, regression pytest
+# only untouched ones, and neither starts the thing.
+PROJECT_VERIFICATION_CHECKS = frozenset({"project_tests", "import_smoke", "compile_all"})
 
 # Bounded retries for append-only usage accounting when another process commits
 # to the same run between this load and save.
@@ -596,6 +603,76 @@ class Orchestrator:
             self._event(run, events, "artifact.validation_completed", validation=record.model_dump())
             return record
         return self._mutate(run_id, operation)
+
+    def record_verification(self, run_id: str, task_id: str, kind: str, passed: bool,
+            evidence: str, *, verifier_id: str, argv: list[str] | None = None,
+            returncode: int | None = None,
+            workspace_fingerprint: str | None = None) -> ProjectVerification:
+        """Record trusted evidence about the assembled product.
+
+        Accepts only outcomes a trusted executor produced. The Manager names a
+        verification kind; the adapter owns the command and the sandbox, exactly
+        as with task validation, so a model cannot assert that the product runs.
+        """
+        if kind not in PROJECT_VERIFICATION_CHECKS:
+            raise GateError(
+                f"Unknown project verification kind {kind!r}; expected one of "
+                f"{', '.join(sorted(PROJECT_VERIFICATION_CHECKS))}")
+        if verifier_id == self.manager_id:
+            raise GateError("Manager cannot verify its own run")
+        def operation(run, events):
+            task = run.tasks[task_id]
+            if task.status != TaskStatus.ACCEPTED:
+                raise GateError(
+                    f"Project verification requires an accepted task; {task_id} is "
+                    f"{task.status.value}")
+            if not task.workspace_id:
+                raise GateError("Project verification requires a candidate workspace")
+            if verifier_id in {assignment.worker_id for assignment in task.assignment_history}:
+                raise GateError("Verifier must be independent of the candidate authors")
+            record = ProjectVerification(
+                kind=kind, task_id=task_id, workspace_id=task.workspace_id,
+                workspace_fingerprint=workspace_fingerprint, argv=list(argv or []),
+                passed=passed, returncode=returncode, evidence=evidence,
+                verifier_id=verifier_id)
+            run.verifications.append(record)
+            self._event(run, events, "project.verified" if passed else "project.verification_failed",
+                verification=record.model_dump(mode="json"))
+            return record
+        return self._mutate(run_id, operation)
+
+    @staticmethod
+    def _verification_blocker(run) -> str | None:
+        """Why the assembled product is not demonstrably working, or None.
+
+        Only runs that actually built something are held to this: a run whose
+        tasks produced no candidate workspace has no product to start, and
+        requiring a sandbox command of it would be theatre.
+        """
+        buildable = [task for task in run.tasks.values()
+                     if task.status == TaskStatus.ACCEPTED and task.workspace_id]
+        if not buildable:
+            return None
+        current = {task.workspace_id for task in buildable}
+        relevant = [record for record in run.verifications
+                    if record.workspace_id in current]
+        failed = sorted({record.kind for record in relevant if not record.passed})
+        if failed:
+            # Mirrors the acceptance evidence rule: a recorded failure against
+            # the delivered state stands until a new candidate supersedes it.
+            # Re-running until green is evidence laundering.
+            return ("project verification failed and still stands: "
+                    + ", ".join(failed)
+                    + ". Fix the product and re-verify a new candidate.")
+        if not [record for record in relevant if record.passed]:
+            return ("no project verification recorded for the delivered workspace. "
+                    "Run verify_project so completion rests on the assembled product "
+                    "running, not only on accepted tasks.")
+        return None
+
+    def verification_blocker(self, run_id: str) -> str | None:
+        """Public projection of the project-level verification gate."""
+        return self._verification_blocker(self.get_run(run_id))
 
     def review(self, run_id: str, artifact_id: str, reviewer_id: str, passed: bool, evidence: str, *, workspace_fingerprint: str | None = None):
         def operation(run, events):
@@ -1244,6 +1321,12 @@ class Orchestrator:
                 self._validate_accepted_artifact(run, task.artifact_ids[-1], checked=checked)
             if any(request.required and request.status == ApprovalStatus.PENDING for request in run.approvals.values()):
                 raise GateError("Outstanding required approval gate")
+            # Task acceptance says every lane did its job. It does not say the
+            # assembled product runs, which is the only thing the human asked
+            # for, so the product itself must have been executed.
+            verification_blocker = self._verification_blocker(run)
+            if verification_blocker:
+                raise GateError("Project is not verified: " + verification_blocker)
             if set(criterion_evidence) != set(run.plan.completion_criteria) or any(not ids or not set(ids).issubset(run.accepted_artifacts) for ids in criterion_evidence.values()):
                 # State the accepted shape explicitly: the kernel accepts IDs of
                 # already-accepted artifacts, never prose, and a Manager that has

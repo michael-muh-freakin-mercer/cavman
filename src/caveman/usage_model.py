@@ -69,7 +69,7 @@ class UsageRecordingModel(Model):
         return response
 
     async def stream_response(self, *args, **kwargs):
-        # Walter's durable runtime uses Runner.run, never Runner.run_streamed.
+        # Caveman's durable runtime uses Runner.run, never Runner.run_streamed.
         raise NotImplementedError("Durable usage accounting does not support streaming")
         yield  # Keep the SDK's asynchronous-iterator interface.
 

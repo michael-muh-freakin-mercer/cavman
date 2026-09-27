@@ -1,10 +1,10 @@
 import pytest
-from walter.contracts import CapabilityRequestPayload, TaskPacket, WorkerResult
-from walter.models import (ApprovalStatus, BlockerReason, CapabilityProfile, CapabilityRequestStatus, Event,
+from caveman.contracts import CapabilityRequestPayload, TaskPacket, WorkerResult
+from caveman.models import (ApprovalStatus, BlockerReason, CapabilityProfile, CapabilityRequestStatus, Event,
     FailureClass, ReplanProposal, TaskNode, TaskStatus)
-from walter.orchestration import (EXECUTABLE_DEVELOPER_CHECKS, REFRESHABLE_BLOCKERS, GateError,
+from caveman.orchestration import (EXECUTABLE_DEVELOPER_CHECKS, REFRESHABLE_BLOCKERS, GateError,
     Orchestrator)
-from walter.store import SQLiteStore
+from caveman.store import SQLiteStore
 
 
 def task(name="a", deps=(), **kwargs):

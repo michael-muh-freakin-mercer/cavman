@@ -215,7 +215,7 @@ class SQLiteStore:
         if found_version != self.SCHEMA_VERSION:
             raise SnapshotIncompatible(
                 f"Run {run_id}: snapshot schema_version={found_version!r} but this build expects "
-                f"{self.SCHEMA_VERSION}. Migrate the operational store with a compatible Walter "
+                f"{self.SCHEMA_VERSION}. Migrate the operational store with a compatible Caveman "
                 "version, or restore the run from a supported backup, before loading it.")
         dropped: list[str] = []
         for _ in range(1000):
@@ -274,7 +274,7 @@ class SQLiteStore:
     def events(self, run_id: str) -> list[Event]:
         with self._lock:
             # An unknown run must not read as an existing run with no history:
-            # `walter run events <typo>` printed an empty list and exited 0.
+            # `caveman run events <typo>` printed an empty list and exited 0.
             if self.connection.execute(
                     "SELECT 1 FROM runs WHERE id=?", (run_id,)).fetchone() is None:
                 raise KeyError(run_id)

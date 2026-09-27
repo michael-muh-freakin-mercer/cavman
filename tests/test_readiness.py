@@ -4,11 +4,11 @@ from pathlib import Path
 
 import pytest
 
-from walter.adapter import DurableController
-from walter.orchestration import GateError, Orchestrator
-from walter.readiness import run_readiness_demo
-from walter.sandbox import CommandResult, WorkspaceManager
-from walter.store import SQLiteStore
+from caveman.adapter import DurableController
+from caveman.orchestration import GateError, Orchestrator
+from caveman.readiness import run_readiness_demo
+from caveman.sandbox import CommandResult, WorkspaceManager
+from caveman.store import SQLiteStore
 
 
 def fixture_repository(tmp_path):

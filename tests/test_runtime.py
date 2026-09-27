@@ -2,8 +2,8 @@ import pytest
 
 pytest.importorskip("agents")
 
-from walter import runtime
-from walter.usage import UsageBudget
+from caveman import runtime
+from caveman.usage import UsageBudget
 
 
 def test_config_requires_openrouter_key():
@@ -21,23 +21,23 @@ def test_worker_max_turns_defaults_and_validates():
     default = runtime.RuntimeConfig.from_env({"OPENROUTER_API_KEY": "test"})
     assert default.worker_max_turns == runtime.DEFAULT_WORKER_MAX_TURNS
     configured = runtime.RuntimeConfig.from_env(
-        {"OPENROUTER_API_KEY": "test", "WALTER_WORKER_MAX_TURNS": "40"})
+        {"OPENROUTER_API_KEY": "test", "CAVEMAN_WORKER_MAX_TURNS": "40"})
     assert configured.worker_max_turns == 40
-    with pytest.raises(runtime.RuntimeConfigurationError, match="WALTER_WORKER_MAX_TURNS"):
+    with pytest.raises(runtime.RuntimeConfigurationError, match="CAVEMAN_WORKER_MAX_TURNS"):
         runtime.RuntimeConfig.from_env(
-            {"OPENROUTER_API_KEY": "test", "WALTER_WORKER_MAX_TURNS": "0"})
-    with pytest.raises(runtime.RuntimeConfigurationError, match="WALTER_WORKER_MAX_TURNS"):
+            {"OPENROUTER_API_KEY": "test", "CAVEMAN_WORKER_MAX_TURNS": "0"})
+    with pytest.raises(runtime.RuntimeConfigurationError, match="CAVEMAN_WORKER_MAX_TURNS"):
         runtime.RuntimeConfig.from_env(
-            {"OPENROUTER_API_KEY": "test", "WALTER_WORKER_MAX_TURNS": "many"})
+            {"OPENROUTER_API_KEY": "test", "CAVEMAN_WORKER_MAX_TURNS": "many"})
 
 
 def test_config_rejects_non_openrouter_provider():
     with pytest.raises(
         runtime.RuntimeConfigurationError,
-        match="WALTER_MODEL_PROVIDER.*only 'openrouter'",
+        match="CAVEMAN_MODEL_PROVIDER.*only 'openrouter'",
     ):
         runtime.RuntimeConfig.from_env(
-            {"WALTER_MODEL_PROVIDER": "openai", "OPENROUTER_API_KEY": "test"}
+            {"CAVEMAN_MODEL_PROVIDER": "openai", "OPENROUTER_API_KEY": "test"}
         )
 
 
@@ -45,8 +45,8 @@ def test_models_are_explicitly_wired_and_tracing_disabled(monkeypatch):
     config = runtime.RuntimeConfig.from_env(
         {
             "OPENROUTER_API_KEY": "test",
-            "WALTER_MODEL": "manager",
-            "WALTER_WORKER_MODEL": "worker",
+            "CAVEMAN_MODEL": "manager",
+            "CAVEMAN_WORKER_MODEL": "worker",
         }
     )
     clients = []
@@ -92,10 +92,10 @@ def test_budget_built_from_optional_env_vars():
     config = runtime.RuntimeConfig.from_env(
         {
             "OPENROUTER_API_KEY": "test",
-            "WALTER_MAX_MODEL_CALLS": "10",
-            "WALTER_MAX_INPUT_TOKENS": "1000",
-            "WALTER_MAX_OUTPUT_TOKENS": "2000",
-            "WALTER_MAX_TOTAL_TOKENS": "3000",
+            "CAVEMAN_MAX_MODEL_CALLS": "10",
+            "CAVEMAN_MAX_INPUT_TOKENS": "1000",
+            "CAVEMAN_MAX_OUTPUT_TOKENS": "2000",
+            "CAVEMAN_MAX_TOTAL_TOKENS": "3000",
         }
     )
     assert config.budget == UsageBudget(
@@ -105,7 +105,7 @@ def test_budget_built_from_optional_env_vars():
 
 def test_partial_budget_env_vars_leave_other_limits_unset():
     config = runtime.RuntimeConfig.from_env(
-        {"OPENROUTER_API_KEY": "test", "WALTER_MAX_MODEL_CALLS": "3"}
+        {"OPENROUTER_API_KEY": "test", "CAVEMAN_MAX_MODEL_CALLS": "3"}
     )
     assert config.budget == UsageBudget(max_calls=3)
 
@@ -113,10 +113,10 @@ def test_partial_budget_env_vars_leave_other_limits_unset():
 @pytest.mark.parametrize(
     "name",
     [
-        "WALTER_MAX_MODEL_CALLS",
-        "WALTER_MAX_INPUT_TOKENS",
-        "WALTER_MAX_OUTPUT_TOKENS",
-        "WALTER_MAX_TOTAL_TOKENS",
+        "CAVEMAN_MAX_MODEL_CALLS",
+        "CAVEMAN_MAX_INPUT_TOKENS",
+        "CAVEMAN_MAX_OUTPUT_TOKENS",
+        "CAVEMAN_MAX_TOTAL_TOKENS",
     ],
 )
 @pytest.mark.parametrize("value", ["abc", "-1", "", "1.5"])
@@ -125,8 +125,8 @@ def test_malformed_budget_env_var_raises_naming_the_variable(name, value):
         runtime.RuntimeConfig.from_env({"OPENROUTER_API_KEY": "test", name: value})
 
 
-def test_build_walter_passes_configured_budget_to_manager_model(monkeypatch):
-    from walter.usage_model import UsageRecordingModel
+def test_build_caveman_passes_configured_budget_to_manager_model(monkeypatch):
+    from caveman.usage_model import UsageRecordingModel
 
     class Controller:
         core = object()
@@ -152,7 +152,7 @@ def test_build_walter_passes_configured_budget_to_manager_model(monkeypatch):
     monkeypatch.setattr(runtime, "build_models", lambda value: (manager_model, worker_model))
     monkeypatch.setattr(runtime, "_agent", lambda **kwargs: kwargs)
 
-    manager = runtime.build_walter(controller)
+    manager = runtime.build_caveman(controller)
 
     model = manager["model"]
     assert isinstance(model, UsageRecordingModel)
@@ -175,7 +175,7 @@ def test_provider_client_is_reused(monkeypatch):
 
 
 def test_manager_uses_durable_controller_when_supplied(monkeypatch):
-    from walter.usage_model import UsageRecordingModel
+    from caveman.usage_model import UsageRecordingModel
 
     class Controller:
         core = object()
@@ -200,7 +200,7 @@ def test_manager_uses_durable_controller_when_supplied(monkeypatch):
     monkeypatch.setattr(runtime, "build_models", lambda value: (manager_model, worker_model))
     monkeypatch.setattr(runtime, "_agent", lambda **kwargs: kwargs)
 
-    manager = runtime.build_walter(controller)
+    manager = runtime.build_caveman(controller)
 
     # The manager agent is driven by the controller's doctrine and tools.
     assert manager["instructions"] == "durable instructions"

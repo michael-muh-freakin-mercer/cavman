@@ -2,7 +2,7 @@
 """Minimal eval runner: executes wired scenarios against the durable runtime.
 
 Default mode is offline and deterministic, driving the Manager loop with the
-scripted model fakes from tests/. Set WALTER_EVALS_LIVE=1 to run the real
+scripted model fakes from tests/. Set CAVEMAN_EVALS_LIVE=1 to run the real
 configured provider models instead (spends credits): the scenario objective is
 handed to the real Manager and the same durable pass criteria are checked.
 
@@ -25,13 +25,13 @@ sys.path.insert(0, str(REPO_ROOT / "tests"))
 from agents import Runner, set_tracing_disabled  # noqa: E402
 
 import fakes  # noqa: E402
-from walter import runtime  # noqa: E402
-from walter.adapter import INITIAL_COMPLETION_CRITERION, DurableController  # noqa: E402
-from walter.orchestration import Orchestrator  # noqa: E402
-from walter.store import SQLiteStore  # noqa: E402
+from caveman import runtime  # noqa: E402
+from caveman.adapter import INITIAL_COMPLETION_CRITERION, DurableController  # noqa: E402
+from caveman.orchestration import Orchestrator  # noqa: E402
+from caveman.store import SQLiteStore  # noqa: E402
 
-LIVE = os.getenv("WALTER_EVALS_LIVE") == "1"
-MAX_TURNS = int(os.getenv("WALTER_EVALS_MAX_TURNS", "40"))
+LIVE = os.getenv("CAVEMAN_EVALS_LIVE") == "1"
+MAX_TURNS = int(os.getenv("CAVEMAN_EVALS_MAX_TURNS", "40"))
 
 
 @dataclass
@@ -359,7 +359,7 @@ def run_scenario(scenario: Scenario) -> list[str]:
         controller = DurableController(core, run.id)
         try:
             if LIVE:
-                agent = runtime.build_walter(controller)
+                agent = runtime.build_caveman(controller)
                 asyncio.run(Runner.run(agent, input=scenario.objective,
                                        max_turns=MAX_TURNS))
             else:
@@ -371,7 +371,7 @@ def run_scenario(scenario: Scenario) -> list[str]:
                         classmethod(lambda cls: _offline_config())), \
                         mock.patch.object(
                             runtime, "build_models", lambda config: (manager, worker)):
-                    agent = runtime.build_walter(controller)
+                    agent = runtime.build_caveman(controller)
                     asyncio.run(Runner.run(agent, input=scenario.objective,
                                            max_turns=MAX_TURNS))
                 manager.assert_complete()
@@ -390,7 +390,7 @@ def main(argv: list[str]) -> int:
         print(f"Unknown scenario(s): {', '.join(unknown)}; wired: {', '.join(SCENARIOS)}")
         return 2
     mode = "LIVE (provider credits)" if LIVE else "offline (scripted fakes)"
-    print(f"Walter eval runner — mode: {mode}")
+    print(f"Caveman eval runner — mode: {mode}")
     failed = 0
     for name in selected:
         scenario = SCENARIOS[name]

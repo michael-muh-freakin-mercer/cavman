@@ -9,15 +9,15 @@ pytest.importorskip("agents")
 
 from agents import Agent, Runner, SQLiteSession, function_tool
 
-from walter.runtime import RuntimeConfig, build_models
+from caveman.runtime import RuntimeConfig, build_models
 
 
 @pytest.mark.live
 def test_openrouter_live_smoke():
     """Opt-in only: exercise tool continuation and persisted conversational history."""
 
-    if os.getenv("WALTER_LIVE_SMOKE") != "1":
-        pytest.skip("set WALTER_LIVE_SMOKE=1 to enable the credit-bearing smoke test")
+    if os.getenv("CAVEMAN_LIVE_SMOKE") != "1":
+        pytest.skip("set CAVEMAN_LIVE_SMOKE=1 to enable the credit-bearing smoke test")
 
     calls = []
 
@@ -31,7 +31,7 @@ def test_openrouter_live_smoke():
         config = RuntimeConfig.from_env()
         manager_model, _ = build_models(config)
         agent = Agent(
-            name="Walter live smoke",
+            name="Caveman live smoke",
             instructions=(
                 "Use remember_fact whenever asked to record something. After the tool returns, "
                 "state the exact tool result and answer the user."

@@ -3,8 +3,8 @@ import json
 
 import pytest
 
-from walter.models import Run, TaskStatus, WorkPlan
-from walter.pulse import normalize_snapshot, render_digest, summarize_run
+from caveman.models import Run, TaskStatus, WorkPlan
+from caveman.pulse import normalize_snapshot, render_digest, summarize_run
 
 
 def snapshot():

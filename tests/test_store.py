@@ -2,11 +2,11 @@ import json
 import sqlite3
 import threading
 import pytest
-from walter.contracts import TaskPacket, WorkerResult
-from walter.models import (ApprovalStatus, BlockerReason, Event, ModelUsageRecord, TaskNode,
+from caveman.contracts import TaskPacket, WorkerResult
+from caveman.models import (ApprovalStatus, BlockerReason, Event, ModelUsageRecord, TaskNode,
     TaskStatus)
-from walter.orchestration import GateError, Orchestrator
-from walter.store import ConcurrentUpdate, SQLiteStore, SnapshotIncompatible
+from caveman.orchestration import GateError, Orchestrator
+from caveman.store import ConcurrentUpdate, SQLiteStore, SnapshotIncompatible
 
 
 def test_store_is_safe_across_threads(tmp_path):
@@ -180,7 +180,7 @@ def test_unknown_snapshot_fields_from_newer_code_shape_are_pruned(tmp_path, capl
     document["tasks"]["readiness-candidate"]["max_review_attempts"] = 3
     store.connection.execute("UPDATE runs SET snapshot=? WHERE id=?",
         (json.dumps(document, separators=(",", ":"), sort_keys=True), run.id))
-    with caplog.at_level("WARNING", logger="walter.store"):
+    with caplog.at_level("WARNING", logger="caveman.store"):
         loaded = store.load(run.id)
     assert loaded == before
     assert loaded.objective == "objective"

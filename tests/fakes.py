@@ -1,4 +1,4 @@
-"""Offline scripted Agents SDK model fakes for Walter's durable-runtime tests.
+"""Offline scripted Agents SDK model fakes for Caveman's durable-runtime tests.
 
 Wraps the pinned SDK's agents.testing.ScriptedModel so tests drive the full
 Runner loop without provider credits. Every scripted step carries a raw
@@ -54,5 +54,5 @@ def responder_step(responder: Callable) -> dict:
 
 
 def scripted_model(steps: Iterable) -> ScriptedModel:
-    """A deterministic offline Model with Walter-compatible usage payloads."""
+    """A deterministic offline Model with Caveman-compatible usage payloads."""
     return ScriptedModel(steps, default_usage=DEFAULT_USAGE)

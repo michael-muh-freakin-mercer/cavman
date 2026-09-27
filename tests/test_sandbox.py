@@ -7,7 +7,7 @@ import subprocess
 
 import pytest
 
-from walter.sandbox import (
+from caveman.sandbox import (
     MAX_AGGREGATE_RSS,
     MAX_PROCESSES,
     MAX_SCRATCH_BYTES,
@@ -16,19 +16,19 @@ from walter.sandbox import (
     SafetyApprovalVerification,
     WorkspaceManager,
 )
-from walter.orchestration import Orchestrator
-from walter.store import SQLiteStore
+from caveman.orchestration import Orchestrator
+from caveman.store import SQLiteStore
 
 
 @pytest.fixture
 def workspace(tmp_path):
     repo = tmp_path / "fixture"
     repo.mkdir()
-    (repo / "src/walter").mkdir(parents=True)
+    (repo / "src/caveman").mkdir(parents=True)
     (repo / "docs").mkdir()
     (repo / "tests").mkdir()
     (repo / "hello.py").write_text("VALUE = 1\n")
-    (repo / "src/walter/sandbox.py").write_text("BOUNDARY = 'candidate source'\n")
+    (repo / "src/caveman/sandbox.py").write_text("BOUNDARY = 'candidate source'\n")
     (repo / "tests/test_hello.py").write_text(
         "from hello import VALUE\n\ndef test_value(): assert VALUE == 1\n"
     )
@@ -56,17 +56,17 @@ def test_candidate_source_and_safety_files_are_readable_and_fully_identified(wor
     manager, grant, repo = workspace
     assert manager.read_file(grant.id, "PERMISSIONS.md", worker_id="author")
     assert "candidate source" in manager.read_file(
-        grant.id, "src/walter/sandbox.py", worker_id="author"
+        grant.id, "src/caveman/sandbox.py", worker_id="author"
     )
     before = manager.fingerprint(grant.id)
     manager.write_file(grant.id, "hello.py", "VALUE = 2\n", worker_id="author")
     assert manager.fingerprint(grant.id) != before
     assert "+VALUE = 2" in manager.diff(grant.id)
-    assert (repo / "src/walter/sandbox.py").read_text() == "BOUNDARY = 'candidate source'\n"
+    assert (repo / "src/caveman/sandbox.py").read_text() == "BOUNDARY = 'candidate source'\n"
 
     # Even an out-of-band safety-file mutation is visible to artifact identity.
     prior_safety = manager.fingerprint(grant.id)
-    (Path(grant.root) / "src/walter/sandbox.py").write_text("BOUNDARY = 'tampered'\n")
+    (Path(grant.root) / "src/caveman/sandbox.py").write_text("BOUNDARY = 'tampered'\n")
     assert manager.fingerprint(grant.id) != prior_safety
     assert "+BOUNDARY = 'tampered'" in manager.diff(grant.id)
 
@@ -80,10 +80,10 @@ def test_candidate_source_and_safety_files_are_readable_and_fully_identified(wor
     assert manager.fingerprint(grant.id) != with_mode
 
     # A candidate commit cannot hide changes: identity and diff are relative to signed base_revision.
-    subprocess.run(["git", "-C", grant.root, "add", "src/walter/sandbox.py"], check=True)
+    subprocess.run(["git", "-C", grant.root, "add", "src/caveman/sandbox.py"], check=True)
     subprocess.run(["git", "-C", grant.root, "-c", "user.name=Candidate", "-c",
                     "user.email=candidate@example.invalid", "commit", "-qm", "candidate"], check=True)
-    assert "src/walter/sandbox.py" in manager.diff(grant.id)
+    assert "src/caveman/sandbox.py" in manager.diff(grant.id)
     assert grant.base_revision != subprocess.run(
         ["git", "-C", grant.root, "rev-parse", "HEAD"], check=True,
         capture_output=True, text=True,
@@ -93,12 +93,12 @@ def test_candidate_source_and_safety_files_are_readable_and_fully_identified(wor
 def test_default_grant_cannot_write_or_delete_safety_boundary(workspace):
     manager, grant, _ = workspace
     protected = [
-        "PERMISSIONS.md", "SYSTEM_PROMPT.md", "src/walter/sandbox.py",
-        "src/walter/orchestration.py",
+        "PERMISSIONS.md", "SYSTEM_PROMPT.md", "src/caveman/sandbox.py",
+        "src/caveman/orchestration.py",
         # Cost control, the worker contract and the launch surface decide
         # authority just as much as the kernel does.
-        "src/walter/usage.py", "src/walter/usage_model.py",
-        "src/walter/contracts.py", "src/walter/__init__.py", "pyproject.toml",
+        "src/caveman/usage.py", "src/caveman/usage_model.py",
+        "src/caveman/contracts.py", "src/caveman/__init__.py", "pyproject.toml",
     ]
     # Missing protected paths are still protected from creation.
     for path in protected:
@@ -108,11 +108,11 @@ def test_default_grant_cannot_write_or_delete_safety_boundary(workspace):
             with pytest.raises(SandboxViolation):
                 manager.delete_file(grant.id, path, worker_id="author")
     assert manager.read_file(grant.id, "PERMISSIONS.md", worker_id="author")
-    assert "src/walter/sandbox.py" in manager.list_files(grant.id, worker_id="author")
+    assert "src/caveman/sandbox.py" in manager.list_files(grant.id, worker_id="author")
 
 
 def _safety_scope(repo, base, *, run_id="run", task_id="safety-task",
-                  worker_id="safety-author", paths=("src/walter/sandbox.py",),
+                  worker_id="safety-author", paths=("src/caveman/sandbox.py",),
                   operation="write"):
     return {
         "action": "safety_boundary_change",
@@ -149,7 +149,7 @@ def test_reserved_safety_facility_is_inert_at_production_construction_sites(tmp_
     verifier, it fails until the security design review TOOLS.md requires
     has happened and this test is deliberately updated.
     """
-    from walter import cli, readiness
+    from caveman import cli, readiness
     import inspect as _inspect
 
     for source in (cli, readiness):
@@ -169,7 +169,7 @@ def test_reserved_safety_facility_is_inert_at_production_construction_sites(tmp_
     with pytest.raises(SandboxViolation, match="Manager approval verifier"):
         manager.create_safety_candidate(
             "run", "safety-task", "safety-author", "a" * 64,
-            ("src/walter/sandbox.py",), "write")
+            ("src/caveman/sandbox.py",), "write")
 
 
 def test_safety_candidate_denies_untrusted_or_forged_approval(workspace):
@@ -178,7 +178,7 @@ def test_safety_candidate_denies_untrusted_or_forged_approval(workspace):
     with pytest.raises(SandboxViolation, match="Manager approval verifier"):
         manager.create_safety_candidate(
             "run", "safety-task", "safety-author", arbitrary_hex,
-            ("src/walter/sandbox.py",), "write")
+            ("src/caveman/sandbox.py",), "write")
 
     forged = WorkspaceManager(
         repo, approval_verifier=lambda *_: SafetyApprovalVerification(
@@ -187,7 +187,7 @@ def test_safety_candidate_denies_untrusted_or_forged_approval(workspace):
     with pytest.raises(SandboxViolation, match="Invalid safety approval verification"):
         forged.create_safety_candidate(
             "run", "safety-task", "safety-author", arbitrary_hex,
-            ("src/walter/sandbox.py",), "write")
+            ("src/caveman/sandbox.py",), "write")
 
 
 def test_core_approved_safety_candidate_is_exact_bounded_and_single_use(workspace):
@@ -212,7 +212,7 @@ def test_core_approved_safety_candidate_is_exact_bounded_and_single_use(workspac
     with pytest.raises(SandboxViolation, match="Exact scoped human approval required"):
         stale_manager.create_safety_candidate(
             run.id, "safety-task", "safety-author", old_approval.id,
-            ("src/walter/sandbox.py",), "write")
+            ("src/caveman/sandbox.py",), "write")
 
     base = subprocess.run(
         ["git", "-C", str(repo), "rev-parse", "HEAD"], check=True,
@@ -227,11 +227,11 @@ def test_core_approved_safety_candidate_is_exact_bounded_and_single_use(workspac
     with pytest.raises(SandboxViolation, match="Invalid safety approval verification"):
         category_manager.create_safety_candidate(
             run.id, "safety-task", "safety-author", wrong_category.id,
-            ("src/walter/sandbox.py",), "write")
+            ("src/caveman/sandbox.py",), "write")
     approval = core.request_approval(
         run.id, "safety_boundary_change", scope, "Human reviewed exact boundary change",
-        category="safety_boundary_change", target="src/walter/sandbox.py",
-        risk="Changes Walter's authority boundary")
+        category="safety_boundary_change", target="src/caveman/sandbox.py",
+        risk="Changes Caveman's authority boundary")
     core.decide_approval(run.id, approval.id, True, "operator", "Approved exact scope")
     manager = WorkspaceManager(repo, approval_verifier=_core_verifier(core))
 
@@ -244,7 +244,7 @@ def test_core_approved_safety_candidate_is_exact_bounded_and_single_use(workspac
         with pytest.raises(SandboxViolation, match="Exact scoped human approval required"):
             manager.create_safety_candidate(
                 values["run_id"], values["task_id"], values["worker_id"], approval.id,
-                ("src/walter/sandbox.py",), "write")
+                ("src/caveman/sandbox.py",), "write")
     with pytest.raises(SandboxViolation, match="Exact scoped human approval required"):
         manager.create_safety_candidate(
             run.id, "safety-task", "safety-author", approval.id,
@@ -252,15 +252,15 @@ def test_core_approved_safety_candidate_is_exact_bounded_and_single_use(workspac
     with pytest.raises(SandboxViolation, match="Exact scoped human approval required"):
         manager.create_safety_candidate(
             run.id, "safety-task", "safety-author", approval.id,
-            ("src/walter/sandbox.py",), "delete")
+            ("src/caveman/sandbox.py",), "delete")
 
     grant = manager.create_safety_candidate(
         run.id, "safety-task", "safety-author", approval.id,
-        ("src/walter/sandbox.py",), "write")
+        ("src/caveman/sandbox.py",), "write")
     assert grant.safety_approval_id == approval.id
     assert grant.safety_approval_digest == approval.scope_digest
     manager.write_file(
-        grant.id, "src/walter/sandbox.py", "BOUNDARY = 'approved candidate'\n",
+        grant.id, "src/caveman/sandbox.py", "BOUNDARY = 'approved candidate'\n",
         worker_id="safety-author")
     with pytest.raises(SandboxViolation, match="Write denied"):
         manager.write_file(grant.id, "hello.py", "bad\n", worker_id="safety-author")
@@ -268,12 +268,12 @@ def test_core_approved_safety_candidate_is_exact_bounded_and_single_use(workspac
     with pytest.raises(SandboxViolation, match="already consumed"):
         reloaded.create_safety_candidate(
             run.id, "safety-task", "safety-author", approval.id,
-            ("src/walter/sandbox.py",), "write")
+            ("src/caveman/sandbox.py",), "write")
 
     # The normal grant still has no authority to mutate the boundary.
     with pytest.raises(SandboxViolation, match="Write denied"):
         reloaded.write_file(
-            normal_grant.id, "src/walter/sandbox.py", "bad\n", worker_id="author")
+            normal_grant.id, "src/caveman/sandbox.py", "bad\n", worker_id="author")
 
 
 def test_safety_approval_rejects_candidate_author_as_human_authority(workspace):
@@ -291,7 +291,7 @@ def test_safety_approval_rejects_candidate_author_as_human_authority(workspace):
     with pytest.raises(SandboxViolation, match="Invalid safety approval verification"):
         manager.create_safety_candidate(
             run.id, "safety-task", "safety-author", approval.id,
-            ("src/walter/sandbox.py",), "write")
+            ("src/caveman/sandbox.py",), "write")
 
 
 def test_path_aware_state_and_secret_policy(workspace):
@@ -310,13 +310,13 @@ def test_path_aware_state_and_secret_policy(workspace):
             manager.read_file(grant.id, path, worker_id="author")
 
     # Candidate code/policy and harmless names are not confused with host secrets/state.
-    for path in ["PERMISSIONS.md", "src/walter/sandbox.py", "docs/credentials-guide.md",
+    for path in ["PERMISSIONS.md", "src/caveman/sandbox.py", "docs/credentials-guide.md",
                  "keys.py", ".env.example", "tokenizer.py", "secrets.example.yaml"]:
         assert manager.read_file(grant.id, path, worker_id="author")
     files = manager.list_files(grant.id, worker_id="author")
     assert not {".env", ".npmrc", ".pypirc", "secrets.yaml", "token.json"} & set(files)
     assert ".env.example" in files
-    assert "src/walter/sandbox.py" in files
+    assert "src/caveman/sandbox.py" in files
 
 
 def test_symlinks_hardlinks_live_checkout_and_worker_identity(workspace):
@@ -424,7 +424,7 @@ def test_pytest_template_accepts_candidate_test_paths_and_denies_traversal(works
                        "def test_ok():\n    assert True\n", worker_id="author")
     argv = ["python", "-m", "pytest", "-q", "-p", "no:cacheprovider",
             "tests/test_candidate.py"]
-    assert manager._command(grant, "test", argv) == ["/opt/walter-env/bin/python", *argv[1:]]
+    assert manager._command(grant, "test", argv) == ["/opt/caveman-env/bin/python", *argv[1:]]
     for path in ("tests/test_missing.py", "../outside.py", "/tmp/evil.py",
                  "tests/../outside.py"):
         with pytest.raises(SandboxViolation):
@@ -443,7 +443,7 @@ def test_backend_absence_fails_closed_after_allowed_template(workspace, monkeypa
         manager.run_command(grant.id, "isolation_probe", ["sandbox-probe"], worker_id="author")
 
 
-def test_real_isolated_walter_dependency_execution_is_required(workspace):
+def test_real_isolated_caveman_dependency_execution_is_required(workspace):
     """This acceptance test must fail, never skip, when isolation is unavailable."""
     manager, grant, repo = workspace
     result = manager.run_command(
@@ -470,7 +470,7 @@ def test_build_template_compiles_to_scratch_without_candidate_writes(workspace):
     before = manager.fingerprint(grant.id)
     result = manager.run_command(
         grant.id, "build",
-        ["python", "-m", "py_compile", "hello.py", "src/walter/sandbox.py"],
+        ["python", "-m", "py_compile", "hello.py", "src/caveman/sandbox.py"],
         worker_id="author",
     )
     assert result.returncode == 0, result.stderr
@@ -482,7 +482,7 @@ def test_build_template_compiles_to_scratch_without_candidate_writes(workspace):
 def test_inventory_limits_fit_ordinary_repositories_and_listing_reads_no_contents(workspace):
     """2026-09-21 decision: limits raised (50 MB / 100k files) and
     list/status/changed_paths no longer read every file's bytes."""
-    import walter.sandbox as sandbox
+    import caveman.sandbox as sandbox
 
     assert sandbox.MAX_FILE_BYTES == 50_000_000
     assert sandbox.MAX_FILES == 100_000
@@ -571,7 +571,7 @@ def test_lib64_symlink_target_resolves_this_hosts_dynamic_loader():
     ``/usr/lib`` and ``/usr/lib64`` differently, and the error names the binary
     rather than the unresolvable interpreter.
     """
-    from walter.sandbox import _loader_dir_target
+    from caveman.sandbox import _loader_dir_target
 
     target = _loader_dir_target()
     assert target in {"usr/lib", "usr/lib64"}

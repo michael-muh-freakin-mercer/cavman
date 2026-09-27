@@ -3,18 +3,37 @@ requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "walter-manager"
+name = "caveman"
 version = "0.1.0"
-description = "Walter general-purpose orchestration Manager runtime for the OpenAI Agents SDK"
+description = "An autonomous builder. Describe the outcome, and Caveman builds it."
+readme = "README.md"
+license = "MIT"
 requires-python = ">=3.11"
+authors = [{ name = "Michael Mercer" }]
+keywords = ["ai", "agents", "autonomous", "code-generation", "orchestration", "sandbox"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Code Generators",
+]
 dependencies = [
   "openai-agents>=0.22.3,<0.23",
   "pydantic>=2",
   "python-dotenv>=1",
 ]
 
+[project.urls]
+Homepage = "https://github.com/who-is-michael-mercer/caveman"
+Repository = "https://github.com/who-is-michael-mercer/caveman"
+Changelog = "https://github.com/who-is-michael-mercer/caveman/blob/main/CHANGELOG.md"
+
 [project.scripts]
-walter = "walter.cli:main"
+caveman = "caveman.cli:main"
 
 [project.optional-dependencies]
 test = ["pytest>=8"]

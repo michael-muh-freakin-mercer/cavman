@@ -10,9 +10,9 @@ CapabilityName = Literal["model_only", "researcher", "repo_reader", "developer_s
 
 
 class TaskPacket(BaseModel):
-    """The minimum-sufficient assignment Walter gives one temporary specialist."""
+    """The minimum-sufficient assignment Caveman gives one temporary specialist."""
 
-    task_id: str = Field(description="Stable identifier assigned by Walter for this task.")
+    task_id: str = Field(description="Stable identifier assigned by Caveman for this task.")
     role: str = Field(description="Narrow specialist role for this single lane of work.")
     objective: str = Field(description="The one objective this worker must accomplish.")
     deliverable: str = Field(description="The inspectable output the worker must return.")
@@ -34,7 +34,7 @@ class TaskPacket(BaseModel):
     )
     acceptance_criteria: list[str] = Field(
         min_length=1,
-        description="Criteria Walter will use to accept or reject the deliverable.",
+        description="Criteria Caveman will use to accept or reject the deliverable.",
     )
     stop_condition: str = Field(
         description="Condition telling the worker when its lane is complete or genuinely blocked."
@@ -71,7 +71,7 @@ class CapabilityRequestPayload(BaseModel):
 
 
 class WorkerResult(BaseModel):
-    """Structured, provisional worker output returned to Walter for acceptance review."""
+    """Structured, provisional worker output returned to Caveman for acceptance review."""
 
     task_id: str
     status: Literal["completed", "blocked", "needs_revision"]
