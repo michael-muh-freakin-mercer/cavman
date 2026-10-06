@@ -11,6 +11,13 @@
 - The workflow driver reads them at the start of every round. Specialists starting work from then on get them in their instructions, newest winning over the task packet where they conflict. Reviewers get them as `owner_instructions` and fail work that ignores one that applies. Work already accepted is not redone; a follow-up run is the way to change it.
 - New `POST /api/runs/{id}/instructions`. Manager mode keeps its own path (the message goes to the Manager on Continue).
 
+## 2026-10-06 — Paid plans through Stripe
+
+- Settings has a Billing panel when Stripe is configured (`STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`; hidden otherwise, so the free beta is unchanged). Builder ($20 a month, $12 of usage, a free first 30 days) and $10 top-ups ($6 of usage that does not expire) go through Stripe-hosted Checkout with Managed Payments: Stripe is the merchant of record and handles tax, fraud, disputes and receipts. "Invoices and plan" opens Stripe's customer portal.
+- The account's monthly limit is now its plan's allowance plus top-up credit left; the call cap grows with it. Credit pays only for spend beyond a month's allowance, settled once per month.
+- Stripe's events reach `/api/stripe/webhook` on the web server, which relays them to the API to verify. Subscription state is read back from Stripe, each payment grants credit once, a refund takes back its share, and deleting an account cancels its subscription.
+- New dependency: `stripe` (Python, 16.x). The privacy policy lists Stripe. Setup and the plan rules are in `docs/BILLING.md`.
+
 ## 2026-10-02 — The site speaks to developers
 
 - Link previews and the browser tab now say "Cavman — AI builds that have to prove they work", with a description naming who it is for (developers) and what it does best (Python and TypeScript libraries, CLIs and API cores, handed over after real tests and a second review). The dig-site joke stays in the landing page's headline.
