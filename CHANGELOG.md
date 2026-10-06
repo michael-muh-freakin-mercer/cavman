@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-02 — The site speaks to developers
+
+- Link previews and the browser tab now say "Cavman — AI builds that have to prove they work", with a description naming who it is for (developers) and what it does best (Python and TypeScript libraries, CLIs and API cores, handed over after real tests and a second review). The dig-site joke stays in the landing page's headline.
+- The last web-app examples are gone: the How it works flow and the landing page's example run now show a Python CLI that renames photos by date, with Python, TypeScript, API, test and docs specialists, and the new-build placeholder models a good, testable request.
+
 ## 2026-10-06 — Sentry 11
 
 - `@sentry/nextjs` 10 → 11. Sentry 11 drops `sendDefaultPii` and collects every kind of data by default, now including local variable values in stack frames. The web server turns each category off in `dataCollection` (user, cookies, bodies, query strings, response headers, stack-frame variables and the rest) and keeps only the request headers `scrubEvent` already kept, so reports carry no more than before.

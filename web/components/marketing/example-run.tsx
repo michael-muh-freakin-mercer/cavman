@@ -5,10 +5,10 @@ import { Check, CircleDashed, LoaderCircle, ShieldCheck } from "lucide-react";
  * product screens never use this component; they render real backend state.
  */
 const ROWS = [
-  { role: "Product specialist", task: "Booking rules and screens", state: "Accepted", tone: "ok" },
-  { role: "Backend specialist", task: "Availability and booking API", state: "Reviewing", tone: "review" },
-  { role: "Frontend specialist", task: "Booking flow UI", state: "Running", tone: "glacier" },
-  { role: "QA specialist", task: "End-to-end booking tests", state: "Waiting", tone: "neutral" },
+  { role: "Planner", task: "Spec: rename by EXIF date, dry run by default", state: "Accepted", tone: "ok" },
+  { role: "Python specialist", task: "Date reader and rename plan", state: "Reviewing", tone: "review" },
+  { role: "Python specialist", task: "Command-line interface", state: "Running", tone: "glacier" },
+  { role: "Test specialist", task: "pytest suite with sample photos", state: "Waiting", tone: "neutral" },
 ] as const;
 
 const TONE = {
@@ -28,7 +28,7 @@ export function ExampleRun() {
             <span className="h-2.5 w-2.5 rounded-full bg-line-strong" />
             <span className="h-2.5 w-2.5 rounded-full bg-line-strong" />
           </div>
-          <span className="font-mono text-xs text-muted">tattoo-studio-booking</span>
+          <span className="font-mono text-xs text-muted">photo-renamer</span>
         </div>
         <span className="sticker rotate-3 bg-sky py-0.5 text-[0.62rem]">EXAMPLE</span>
       </div>
