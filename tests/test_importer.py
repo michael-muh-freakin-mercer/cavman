@@ -3,6 +3,7 @@
 The network is never used: GitHub metadata is stubbed and the clone comes from a
 local upstream repository over file://, which the importer otherwise refuses.
 """
+import json
 import subprocess
 
 import pytest
@@ -41,7 +42,7 @@ def upstream(tmp_path):
 def local_github(monkeypatch, upstream):
     """Point the importer at the local upstream, keeping every other rule."""
     metadata = dict(PUBLIC)
-    monkeypatch.setattr(importer, "repository_metadata", lambda source, api_url, token=None: metadata)
+    monkeypatch.setattr(importer, "repository_metadata", lambda source, api_url, token=None, **kwargs: metadata)
     monkeypatch.setattr(importer, "ALLOWED_PROTOCOLS", "file")
     monkeypatch.setattr(importer.Source, "clone_url", property(lambda self: f"file://{upstream}"))
     return metadata
@@ -111,7 +112,7 @@ def test_links_and_submodules_are_refused_and_nothing_is_left_behind(tmp_path, l
 
 def test_private_oversized_and_disabled_imports_are_refused(tmp_path, local_github):
     local_github["private"] = True
-    with pytest.raises(importer.RepositoryImportError, match="public"):
+    with pytest.raises(importer.RepositoryImportError, match="private"):
         run_import(tmp_path)
     local_github.update(private=False, size=10 * 1024)
     with pytest.raises(importer.RepositoryImportError, match="larger than the 1 MB"):
@@ -125,7 +126,7 @@ def test_private_oversized_and_disabled_imports_are_refused(tmp_path, local_gith
 
 
 def test_git_refuses_non_https_transport_by_default(tmp_path, monkeypatch, upstream):
-    monkeypatch.setattr(importer, "repository_metadata", lambda source, api_url, token=None: dict(PUBLIC))
+    monkeypatch.setattr(importer, "repository_metadata", lambda source, api_url, token=None, **kwargs: dict(PUBLIC))
     monkeypatch.setattr(importer.Source, "clone_url", property(lambda self: f"file://{upstream}"))
     with pytest.raises(importer.RepositoryImportError, match="Git could not import"):
         run_import(tmp_path)
@@ -190,7 +191,7 @@ def test_api_starts_projects_and_builds_from_an_imported_repository(tmp_path, lo
         local_github["private"] = True
         response = client.post("/api/builds", headers=headers, json={
             "prompt": "Add a greeting endpoint", "settings": {"repository_url": "https://github.com/octo/demo"}})
-        assert response.status_code == 422 and "public" in response.json()["detail"]
+        assert response.status_code == 422 and "private" in response.json()["detail"] and response.json()["needs_scope"] == "repo"
         assert sorted(p.name for p in settings.projects_dir.iterdir()) == before
         assert len(client.get("/api/projects", headers=headers).json()["projects"]) == 2
 
@@ -213,3 +214,71 @@ def test_import_token_rides_only_in_the_clone_environment(tmp_path, local_github
     repo = tmp_path / "project" / "repo"
     assert "ghp_" not in (repo / ".git" / "config").read_text()
     assert "extraheader" not in (repo / ".git" / "config").read_text().lower()
+
+
+def test_a_private_repository_needs_the_users_own_token(tmp_path, local_github, monkeypatch):
+    local_github["private"] = True
+    local_github["visibility"] = "private"
+    # Without a user token, not even the operator's import token may read it.
+    with pytest.raises(importer.RepositoryImportError) as refused:
+        importer.import_repository("https://github.com/octo/demo", tmp_path / "a" / "repo", "Demo",
+                                   api_url="https://api.github.invalid", max_mb=50, max_files=100,
+                                   token="ghp_" + "o" * 36)
+    assert refused.value.needs_scope == "repo" and "private" in str(refused.value)
+    assert not (tmp_path / "a").exists() or not (tmp_path / "a" / "repo").exists()
+
+    used = []
+    original = importer._environment
+
+    def spy(token=None):
+        if token:
+            used.append(token)
+        return original(token)
+    monkeypatch.setattr(importer, "_environment", spy)
+    user_token = "gho_" + "u" * 36
+    imported = importer.import_repository("https://github.com/octo/demo", tmp_path / "b" / "repo", "Demo",
+                                          api_url="https://api.github.invalid", max_mb=50, max_files=100,
+                                          token="ghp_" + "o" * 36, user_token=user_token)
+    assert imported.private is True and imported.files == 4
+    assert set(used) == {user_token}  # the user's token, for the download only
+    assert user_token not in (tmp_path / "b" / "repo" / ".git" / "config").read_text()
+
+
+def test_a_missing_repository_without_a_user_token_offers_to_connect_github(monkeypatch):
+    import urllib.error
+
+    def not_found(*args, **kwargs):
+        raise urllib.error.HTTPError("https://api.github.invalid", 404, "Not Found", {}, None)
+
+    monkeypatch.setattr(importer.urllib.request, "urlopen", not_found)
+    source = importer.parse_url("https://github.com/octo/secret")
+    with pytest.raises(importer.RepositoryImportError) as anonymous:
+        importer.repository_metadata(source, "https://api.github.invalid")
+    assert anonymous.value.needs_scope == "repo"
+    with pytest.raises(importer.RepositoryImportError) as with_user:
+        importer.repository_metadata(source, "https://api.github.invalid", user_token="gho_" + "u" * 36)
+    assert with_user.value.needs_scope is None and "cannot read it" in str(with_user.value)
+
+
+def test_api_imports_a_private_repository_only_with_the_users_token(tmp_path, local_github):
+    pytest.importorskip("agents")
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from cavman.api import create_app
+    from cavman.config import Settings
+
+    local_github["private"] = True
+    token = "t" * 40
+    headers = {"Authorization": f"Bearer {token}", "X-Cavman-User": "alice"}
+    settings = Settings(data_dir=tmp_path / "data", api_token=token, executor="scripted")
+    with TestClient(create_app(settings)) as client:
+        body = {"prompt": "Add a greeting endpoint", "settings": {"repository_url": "https://github.com/octo/demo"}}
+        refused = client.post("/api/builds", headers=headers, json=body)
+        assert refused.status_code == 422 and refused.json()["needs_scope"] == "repo"
+        allowed = client.post("/api/builds", headers={**headers, "X-Cavman-GitHub-Token": "gho_" + "u" * 36},
+                              json=body)
+        assert allowed.status_code == 201, allowed.text
+        project = client.get(f"/api/projects/{allowed.json()['project_id']}", headers=headers).json()
+        assert project["settings"]["source"]["private"] is True
+        assert "gho_" not in json.dumps(project)

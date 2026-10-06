@@ -86,14 +86,14 @@ Approvals on record: live-model campaign spend up to **$50** (OpenRouter); misc 
 - [x] 🤖 Cost estimate before a build starts (from what recent completed builds here actually cost, per model mode; plus the ceiling and the monthly allowance left)
 
 ### 11. Talking with a build
-- [ ] 🤖 Clarifying questions as first-class "Cavman needs your input" requests
-- [ ] 🤖 Instructions mid-run (workflow mode rejects messages today)
+- [x] 🤖 Clarifying questions as first-class "Cavman needs your input" requests (the planner may ask up to three questions once, before planning; the run shows them and the answer continues it)
+- [x] 🤖 Instructions mid-run (Add an instruction while a build runs, or with Continue; later specialists and reviewers follow it; accepted work is not redone)
 - [x] 🤖 Email when a build finishes or needs an approval (the API lists finished jobs at `/api/notices`; the web server emails verified owners every minute; off per user in Settings or for the server with `CAVMAN_BUILD_EMAILS=0`)
 
 ### 12. GitHub
 - [ ] 🤖 Publish flow end to end against github.com, including the scope upgrade (tested against a stand-in only)
 - [x] 🤖 Import a real public repository (`tests/test_github_live.py` imports octocat/Hello-World from github.com through the API; an advisory CI job runs it on every push)
-- [ ] 🤖 Private repository import with the user's token
+- [x] 🤖 Private repository import with the user's token (only the importing user's own token, with the `repo` scope, can import a private repository; the operator token never can; the token is used for the download only)
 - [ ] 🤖 Push updates to an existing repository as a pull request
 
 ### 13. Safe previews of built web apps
@@ -118,7 +118,7 @@ Approvals on record: live-model campaign spend up to **$50** (OpenRouter); misc 
 - [x] 🧑 Support contact channel (email only for now: support@cavman.dev, owner's decision 2026-10-02)
 
 ## P2: soon after launch
-- [ ] 🤖 Keep or retire manager mode (its conversation sessions are still local SQLite)
+- [x] 🤖 Keep or retire manager mode (retired 2026-10-02, owner's decision: every build runs the workflow driver, and `CAVMAN_ORCHESTRATION=manager` is refused at startup)
 - [ ] 🤖 More sandbox stacks (Go, Rust, Java)
 - [x] 🤖 Compare Budget / Balanced / Maximum Quality with real models (2026-10-02: deepseek-v4-flash too weak; suggest deepseek-v4-pro for Budget and Balanced, claude-sonnet-5.5 for Maximum Quality; set `CAVMAN_MODELS_*` to offer them)
 - [x] 🤖 Dependency update automation (Dependabot weekly for pip, npm and GitHub Actions: `.github/dependabot.yml`)

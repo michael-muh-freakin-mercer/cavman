@@ -119,8 +119,8 @@ Generated Project      per-project git repo → verified delivery archive
   deterministic code drives plan → delegate → validate → review →
   accept/integrate → recover, and models only do the parts that need a brain
   (planning, building, reviewing). No tokens burned on bookkeeping. Every step
-  still goes through the kernel. `CAVMAN_ORCHESTRATION=manager` brings back
-  the original mode, where a Manager model drives each step through tool calls.
+  still goes through the kernel. (The original manager mode, where a Manager
+  model drove each step through tool calls, was retired on 2026-10-02.)
 - **Web (`web/`)** renders real state over server-sent events. The browser only
   watches and decides; closing it never hurts a run.
 

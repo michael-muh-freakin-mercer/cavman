@@ -415,30 +415,11 @@ def test_delivery_refuses_an_integration_branch_moved_outside_cavman(client, set
 
 
 @needs_sandbox
-@pytest.mark.parametrize("prompt", ["Booking app", "Booking #parallel", "Booking #approval"])
-def test_manager_orchestration_mode_still_completes(settings, prompt):
-    from dataclasses import replace
-    manager_mode = replace(settings, orchestration="manager")
-    with TestClient(create_app(manager_mode)) as client:
-        run_id = build(client, prompt=prompt)["run_id"]
-        drain(manager_mode)
-        detail = client.get(f"/api/runs/{run_id}", headers=ALICE).json()
-        if detail["state"] == "approval_needed":
-            approval = detail["approvals"][0]
-            client.post(f"/api/runs/{run_id}/approvals/{approval['id']}",
-                        json={"decision": "approve", "scope_digest": approval["scope_digest"]}, headers=ALICE)
-            drain(manager_mode)
-            detail = client.get(f"/api/runs/{run_id}", headers=ALICE).json()
-    assert detail["state"] == "complete" and detail["orchestration"] == "manager"
-    assert detail["usage"]["by_role"]["manager"]["calls"] > 1
-
-
-@needs_sandbox
 def test_workflow_mode_spends_one_planning_call_and_no_manager_calls(client, settings):
     run_id = build(client)["run_id"]
     drain(settings)
     detail = client.get(f"/api/runs/{run_id}", headers=ALICE).json()
-    assert detail["state"] == "complete" and detail["orchestration"] == "workflow"
+    assert detail["state"] == "complete"
     assert detail["usage"]["by_role"]["planner"]["calls"] == 1
     assert "manager" not in detail["usage"]["by_role"]
 
@@ -459,11 +440,64 @@ def test_rejected_capability_leaves_the_task_blocked(client, settings):
     assert next(t for t in detail["tasks"] if t["id"] == "core")["state"] == "Blocked"
 
 
-def test_workflow_mode_refuses_follow_up_instructions(client):
+@pytest.fixture
+def seen_instructions(monkeypatch):
+    """Every model conversation's system instructions and input, by role."""
+    from walter.adapter import DurableController
+
+    seen, invoke = [], DurableController._invoke
+
+    async def recording(self, **kwargs):
+        seen.append((kwargs["role"], kwargs["instructions"], kwargs["input"]))
+        return await invoke(self, **kwargs)
+
+    monkeypatch.setattr(DurableController, "_invoke", recording)
+    return seen
+
+
+@needs_sandbox
+def test_an_instruction_while_a_build_runs_reaches_later_specialists_and_reviewers(
+        client, settings, seen_instructions):
+    run_id = build(client)["run_id"]  # queued: no worker has picked it up yet
+    added = client.post(f"/api/runs/{run_id}/instructions", headers=ALICE,
+                        json={"message": "Store times in UTC"})
+    assert added.status_code == 201 and added.json()["instruction"]["text"] == "Store times in UTC"
+    assert client.post(f"/api/runs/{run_id}/instructions", headers=MALLORY,
+                       json={"message": "x"}).status_code == 404
+    assert client.post(f"/api/runs/{run_id}/instructions", headers=ALICE,
+                       json={"message": "   "}).status_code == 422
+    drain(settings)
+    detail = client.get(f"/api/runs/{run_id}", headers=ALICE).json()
+    assert detail["state"] == "complete"
+    assert [i["text"] for i in detail["instructions"]] == ["Store times in UTC"]
+    workers = [instructions for role, instructions, _ in seen_instructions if role == "worker"]
+    reviewers = [payload for role, _, payload in seen_instructions if role == "reviewer"]
+    assert workers and all("1) Store times in UTC" in text for text in workers)
+    assert reviewers and all(json.loads(payload)["owner_instructions"] == ["Store times in UTC"]
+                             for payload in reviewers)
+    finished = client.post(f"/api/runs/{run_id}/instructions", headers=ALICE, json={"message": "more"})
+    assert finished.status_code == 409
+
+
+@needs_sandbox
+def test_continuing_with_an_instruction_records_it_for_the_rest_of_the_build(client, settings, seen_instructions):
     run_id = build(client)["run_id"]
     client.post(f"/api/runs/{run_id}/stop", headers=ALICE)
     response = client.post(f"/api/runs/{run_id}/continue", json={"message": "add dark mode"}, headers=ALICE)
-    assert response.status_code == 422
+    assert response.status_code == 202
+    drain(settings)
+    detail = client.get(f"/api/runs/{run_id}", headers=ALICE).json()
+    assert [i["text"] for i in detail["instructions"]] == ["add dark mode"]
+    assert any("1) add dark mode" in text for role, text, _ in seen_instructions if role == "worker")
+
+
+def test_a_run_takes_a_bounded_number_of_instructions(client):
+    run_id = build(client)["run_id"]
+    for index in range(20):
+        assert client.post(f"/api/runs/{run_id}/instructions", headers=ALICE,
+                           json={"message": f"note {index}"}).status_code == 201
+    assert client.post(f"/api/runs/{run_id}/instructions", headers=ALICE,
+                       json={"message": "one too many"}).status_code == 429
 
 
 @needs_sandbox
@@ -1024,6 +1058,15 @@ def test_a_build_waiting_for_approval_is_noticed(client, settings):
     assert notice["run_id"] == run_id and notice["state"] == "approval_needed"
 
 
+@needs_sandbox
+def test_a_build_with_questions_for_its_owner_is_noticed(client, settings):
+    run_id = build(client, prompt="Booking app #questions")["run_id"]
+    drain(settings)
+    [notice] = client.get("/api/notices", headers=SERVICE).json()["notices"]
+    assert notice["run_id"] == run_id and notice["state"] == "input_needed"
+    assert notice["explanation"].startswith("Cavman has a few questions")
+
+
 def test_a_build_that_reached_its_ceiling_is_noticed(settings):
     from dataclasses import replace
     limited = replace(settings, default_max_model_calls=3)
@@ -1032,6 +1075,29 @@ def test_a_build_that_reached_its_ceiling_is_noticed(settings):
         drain(limited)
         [notice] = client.get("/api/notices", headers=SERVICE).json()["notices"]
     assert notice["run_id"] == run_id and notice["state"] == "budget_reached"
+
+
+@needs_sandbox
+def test_a_build_can_ask_its_owner_questions_before_planning(client, settings, seen_instructions):
+    run_id = build(client, prompt="Booking app #questions")["run_id"]
+    drain(settings)
+    detail = client.get(f"/api/runs/{run_id}", headers=ALICE).json()
+    assert detail["state"] == "input_needed" and detail["label"] == "Needs your input"
+    assert detail["questions"] == ["Should clients pay a deposit when they book?", "Which hours is the studio open?"]
+    assert detail["tasks"] == []
+    listed = client.get("/api/runs", headers=ALICE).json()["runs"][0]
+    assert listed["state"] == "input_needed"
+    answered = client.post(f"/api/runs/{run_id}/continue", headers=ALICE,
+                           json={"message": "No deposit. Open 10:00 to 18:00."})
+    assert answered.status_code == 202
+    drain(settings)
+    detail = client.get(f"/api/runs/{run_id}", headers=ALICE).json()
+    assert detail["state"] == "complete" and detail["questions"] == []
+    planners = [payload for role, _, payload in seen_instructions if role == "planner"]
+    assert len(planners) == 2
+    assert "No deposit. Open 10:00 to 18:00." in planners[1] and "Should clients pay a deposit" in planners[1]
+    planner_rules = [text for role, text, _ in seen_instructions if role == "planner"]
+    assert "Do not ask again" in planner_rules[1] and "Do not ask again" not in planner_rules[0]
 
 
 def stopped(client, **extra):

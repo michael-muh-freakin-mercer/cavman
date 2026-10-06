@@ -228,6 +228,13 @@ def _tool_trace_hooks(role: str, task_id: str | None):
 CHECK_OUTPUT_CHARS = 3000
 
 
+def _owner_instructions_text(instructions: list[str]) -> str:
+    numbered = " ".join(f"{index}) {text.strip()}" for index, text in enumerate(instructions, 1))
+    return (" The user who asked for this build added instructions while it ran, newest last. Follow them where "
+            "they apply to your task; where they conflict with the task packet, the newer instruction wins: "
+            + numbered)
+
+
 NODE_CHECKS = frozenset({"node_test", "tsc", "npm_build"})
 
 
@@ -360,6 +367,10 @@ class DurableController:
         self.run_id = run_id
         self.workspaces = workspaces
         self._config = config
+        # Direction the run's owner gave after it started (Cavman's workflow
+        # driver keeps this current). Specialists and reviewers starting work
+        # see it; it never changes what was already accepted.
+        self.owner_instructions: list[str] = []
         # Integration is enabled only for repositories the platform owns (Cavman
         # projects). The operator CLI on a user's own checkout leaves it off.
         self.integration = integration and workspaces is not None
@@ -1300,6 +1311,8 @@ class DurableController:
                     worker_instructions += (" Your workspace already contains your previous attempt, replayed onto the latest accepted project code. Inspect it with inspect_diff, fix whatever the task still needs, and verify.")
                 elif carried is False:
                     worker_instructions += (" Your previous attempt could not be replayed onto the latest accepted project code because it conflicts with it. Re-implement the task on the current code.")
+            if self.owner_instructions:
+                worker_instructions += _owner_instructions_text(self.owner_instructions)
             try:
                 result = await self._invoke(name=f"Specialist {worker_id}",
                     role="worker", task_id=task_id, assignment_id=assignment.id, worker_id=worker_id,
@@ -1588,8 +1601,12 @@ class DurableController:
         if must_read:
             plan_check += (" Open the candidate's files with read_file before you rule: a verdict given without "
                            "reading any file is rejected, whatever it says.")
+        if self.owner_instructions:
+            plan_check += (" owner_instructions is direction the user gave during the build: where it applies to "
+                           "this task, a candidate that ignores it does not meet the item it concerns.")
         review_input = json.dumps({"packet": task.packet.model_dump(), "artifact": artifact.model_dump(mode="json"),
                                    "request": self.inspect().objective,
+                                   "owner_instructions": self.owner_instructions,
                                    "plan_items": [{"item": number, "text": text}
                                                   for number, text in enumerate(items, 1)]})
         report = await self._invoke(name=f"Independent reviewer {reviewer_id}",

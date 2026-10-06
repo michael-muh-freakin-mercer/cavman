@@ -25,6 +25,7 @@ describe("noticeEmail", () => {
 
   it("words each state the owner has to act on", () => {
     expect(noticeEmail("a@x", notice({ state: "approval_needed" }), "https://c").subject).toMatch(/^Cavman needs your decision/);
+    expect(noticeEmail("a@x", notice({ state: "input_needed" }), "https://c").subject).toMatch(/^Cavman has questions/);
     expect(noticeEmail("a@x", notice({ state: "budget_reached" }), "https://c").subject).toMatch(/^Your build reached its budget/);
     const failed = noticeEmail("a@x", notice({ state: "failed", explanation: "The worker crashed.", cost_usd: null }), "https://c");
     expect(failed.subject).toMatch(/^Your build stopped/);

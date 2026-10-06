@@ -107,6 +107,13 @@ CREATE TABLE IF NOT EXISTS job_notices(
   noticed_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS job_notices_run ON job_notices(run_id);
+CREATE TABLE IF NOT EXISTS run_instructions(
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES runs(id),
+  text TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS run_instructions_run ON run_instructions(run_id, created_at);
 CREATE TABLE IF NOT EXISTS deliveries(
   run_id TEXT PRIMARY KEY REFERENCES runs(id),
   status TEXT NOT NULL,
@@ -341,7 +348,8 @@ class PlatformStore:
                 raise ActiveWork("A build is running. Stop it, or wait for it to finish, before deleting your account.")
             runs = [row[0] for row in db.execute(owned + " ORDER BY created_at", (owner_id,))]
             projects = [row[0] for row in db.execute("SELECT id FROM projects WHERE owner_id=?", (owner_id,))]
-            for table in ("publications", "workflow_state", "deliveries", "job_notices", "jobs", "retired_runs"):
+            for table in ("publications", "workflow_state", "deliveries", "job_notices", "run_instructions", "jobs",
+                          "retired_runs"):
                 db.execute(f"DELETE FROM {table} WHERE run_id IN ({owned})", (owner_id,))
             db.execute("DELETE FROM publications WHERE owner_id=?", (owner_id,))
             db.execute("DELETE FROM rate_events WHERE owner_id=?", (owner_id,))
@@ -571,6 +579,19 @@ class PlatformStore:
         with self._write() as db:
             db.execute("INSERT INTO job_notices VALUES(?,?,?) ON CONFLICT(job_id) DO NOTHING",
                        (job.id, job.run_id, _now()))
+
+    # Owner instructions ---------------------------------------------------
+
+    def add_instruction(self, run_id: str, text: str) -> dict:
+        item = {"id": new_id(), "run_id": run_id, "text": text, "created_at": _now()}
+        with self._write() as db:
+            db.execute("INSERT INTO run_instructions(id, run_id, text, created_at) VALUES(?,?,?,?)",
+                       (item["id"], run_id, text, item["created_at"]))
+        return item
+
+    def instructions(self, run_id: str) -> list[dict]:
+        return [dict(row) for row in self._query(
+            "SELECT id, text, created_at FROM run_instructions WHERE run_id=? ORDER BY created_at, id", (run_id,))]
 
     def request_cancel(self, run_id: str) -> Job | None:
         with self._write() as db:

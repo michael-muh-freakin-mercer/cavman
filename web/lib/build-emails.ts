@@ -50,6 +50,12 @@ function wording(notice: Notice): { subject: string; lead: string; action: strin
         lead: notice.explanation,
         action: "Review and decide",
       };
+    case "input_needed":
+      return {
+        subject: `Cavman has questions about your build: ${project}`,
+        lead: notice.explanation,
+        action: "Answer them",
+      };
     case "budget_reached":
       return {
         subject: `Your build reached its budget: ${project}`,

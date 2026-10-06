@@ -232,8 +232,8 @@ jobs:
     runs-on: ubuntu-24.04
     needs: [suite, web]
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -253,7 +253,7 @@ jobs:
         env:
           CI: "1"
         run: deploy/e2e.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: deploy-playwright-report
@@ -276,7 +276,7 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U cavman" --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Install age
         run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends age
       - name: Lint the scripts
@@ -295,7 +295,7 @@ jobs:
     # the right labels and credentials, and leaves other containers out.
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Lint the script
         run: shellcheck deploy/logs/*.sh
       - name: Ship logs to a stand-in
