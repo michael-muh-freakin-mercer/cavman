@@ -1012,6 +1012,89 @@ def test_estimate_endpoint_returns_ceiling_and_allowance(client):
     assert client.get("/api/estimate").status_code == 401
 
 
+@needs_sandbox
+def test_a_criterion_tasks_share_is_checked_on_the_finished_project(client, settings):
+    run_id = build(client, prompt="Booking core with reminders #shared")["run_id"]
+    drain(settings)
+    detail = client.get(f"/api/runs/{run_id}", headers=ALICE).json()
+    assert detail["state"] == "complete", detail["jobs"][-1]["message"]
+    assert "reviewed as a whole against 1 shared success criterion" in detail["final_result"]
+    assert "checks run together" in detail["final_result"]
+    reviewers = [r for r in detail["usage"]["records"] if r["role"] == "reviewer" and r["task_id"] is None]
+    assert reviewers, "the project reviewer's model calls are recorded"
+
+
+@needs_sandbox
+@pytest.mark.parametrize("decision", ["approve", "reject"])
+def test_a_finished_project_that_misses_a_shared_criterion_asks_to_add_a_fix(client, settings, decision):
+    run_id = build(client, prompt="Booking core with reminders #shared-fix")["run_id"]
+    drain(settings)
+    detail = client.get(f"/api/runs/{run_id}", headers=ALICE).json()
+    assert detail["state"] == "approval_needed", detail["jobs"][-1]["message"]
+    assert "does not yet meet" in detail["jobs"][-1]["message"]
+    [approval] = [a for a in detail["approvals"] if a["status"] == "pending"]
+    assert approval["title"] == "Change the plan"
+    assert any(item.startswith("Add task:") for item in approval["changes"])
+    decided = client.post(f"/api/runs/{run_id}/approvals/{approval['id']}", headers=ALICE,
+                          json={"decision": decision, "scope_digest": approval["scope_digest"]})
+    assert decided.status_code == 200, decided.text
+    drain(settings)
+    detail = client.get(f"/api/runs/{run_id}", headers=ALICE).json()
+    assert detail["state"] == "complete", detail["jobs"][-1]["message"]
+    task_ids = [t["id"] for t in detail["tasks"]]
+    if decision == "approve":
+        assert "project-fix-1" in task_ids
+        assert "reviewed as a whole" in detail["final_result"]
+        assert "confirm.py" in detail["delivery"]["files"]
+    else:
+        assert "project-fix-1" not in task_ids
+        assert "You chose to finish without the proposed fix" in detail["final_result"]
+
+
+@needs_sandbox
+def test_project_checks_that_fail_together_fail_the_project_review_whatever_the_reviewer_says(
+        client, settings, monkeypatch):
+    import walter.adapter as adapter
+
+    real = adapter._run_check
+
+    def failing_together(manager, workspace_id, worker_id, check, paths):
+        if worker_id.startswith("project-reviewer-"):
+            return json.dumps({"check": check, "passed": False, "output": "1 failed"})
+        return real(manager, workspace_id, worker_id, check, paths)
+
+    monkeypatch.setattr(adapter, "_run_check", failing_together)
+    run_id = build(client, prompt="Booking core with reminders #shared")["run_id"]
+    drain(settings)
+    detail = client.get(f"/api/runs/{run_id}", headers=ALICE).json()
+    assert detail["state"] == "approval_needed"
+    [approval] = detail["approvals"]
+    assert "Checks failing on the integrated project: pytest" in approval["what"]
+
+
+@needs_sandbox
+def test_a_project_review_that_cannot_run_stops_the_build_for_a_retry(client, settings, monkeypatch):
+    from walter.adapter import DurableController
+
+    calls = []
+    real = DurableController.review_project
+
+    async def flaky(self, criteria):
+        calls.append(criteria)
+        if len(calls) == 1:
+            raise RuntimeError("provider timed out")
+        return await real(self, criteria)
+
+    monkeypatch.setattr(DurableController, "review_project", flaky)
+    run_id = build(client, prompt="Booking core with reminders #shared")["run_id"]
+    drain(settings)
+    detail = client.get(f"/api/runs/{run_id}", headers=ALICE).json()
+    assert detail["state"] == "waiting" and "Continue the run to try again" in detail["jobs"][-1]["message"]
+    assert client.post(f"/api/runs/{run_id}/continue", json={}, headers=ALICE).status_code == 202
+    drain(settings)
+    assert client.get(f"/api/runs/{run_id}", headers=ALICE).json()["state"] == "complete"
+
+
 SERVICE = {"Authorization": f"Bearer {TOKEN}"}
 
 

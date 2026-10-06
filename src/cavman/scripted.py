@@ -213,6 +213,27 @@ def test_reminder_mentions_time():
     assert reminder("Ada", "mon", 11) == "Hi Ada, see you mon at 11:00."
 '''
 
+# A success criterion two tasks share, so the finished project is reviewed as a whole.
+SHARED_CRITERION = "Booking and reminders work together: booking a slot yields a reminder for it"
+
+CONFIRM_MODULE = '''"""Book a slot and return its reminder: the booking core and reminders together."""
+from booking import Calendar, Slot
+from notify import reminder
+
+
+def book_and_remind(calendar: Calendar, day: str, hour: int, client: str) -> str:
+    calendar.book(Slot(day, hour), client)
+    return reminder(client, day, hour)
+'''
+
+CONFIRM_TESTS = '''from booking import Calendar
+from confirm import book_and_remind
+
+
+def test_booking_returns_its_reminder():
+    assert book_and_remind(Calendar(), "mon", 11, "Ada") == "Hi Ada, see you mon at 11:00."
+'''
+
 _API_PACKET = {
     "task_id": "api",
     "role": "API specialist",
@@ -294,6 +315,10 @@ def scenario_for(objective: str) -> str:
         return "node"
     if "#follow-up" in text:
         return "follow-up"
+    if "#shared-fix" in text:
+        return "shared-fix"
+    if "#shared" in text:
+        return "shared"
     return "complete"
 
 
@@ -410,6 +435,32 @@ def build_workflow_scripts(scenario: str, kind: str) -> tuple[list, dict]:
                                                                 "test_cancel.py": CANCEL_TESTS},
                                            "Cancellation written")],
             ("cancel", "reviewer"): [_tool("read_file", {"path": "cancel.py"}, "review-cancel"), review_pass]}
+    if scenario in {"shared", "shared-fix"}:
+        project_read = _tool("read_file", {"path": "notify.py"}, "project-read")
+        if kind != "start" and scenario == "shared":  # a retried project review
+            return [], {("project", "reviewer"): [project_read, review_pass]}
+        if kind != "start":  # after the owner approved the proposed fix
+            return [], {
+                ("project-fix-1", "worker"): _write("project-fix-1", "fix",
+                                                    {"confirm.py": CONFIRM_MODULE, "test_confirm.py": CONFIRM_TESTS},
+                                                    "Booking now returns its reminder"),
+                ("project-fix-1", "reviewer"): [_tool("read_file", {"path": "confirm.py"}, "review-fix"),
+                                                review_pass],
+                ("project", "reviewer"): [_tool("read_file", {"path": "confirm.py"}, "project-read-2"),
+                                          review_pass]}
+        project_review = ([project_read, review_pass] if scenario == "shared" else
+                          [project_read, _review(False, "Nothing books a slot and produces its reminder")])
+        return [_plan([CORE_CRITERION, SHARED_CRITERION], [
+            (_CORE_PACKET, "developer_sandbox", ["pytest"], [0, 1]),
+            ({**_NOTIFY_PACKET, "dependencies": ["core"]}, "developer_sandbox", ["pytest", "pytest_regression"],
+             [1])])], {
+            ("core", "worker"): _write_code("core", BOOKING_MODULE),
+            ("core", "reviewer"): list(reviewer),
+            ("notify", "worker"): _write("notify", "notify", {"notify.py": NOTIFY_MODULE,
+                                                               "test_notify.py": NOTIFY_TESTS},
+                                         "Reminder text written"),
+            ("notify", "reviewer"): [_tool("read_file", {"path": "notify.py"}, "review-notify"), review_pass],
+            ("project", "reviewer"): project_review}
     if scenario == "questions":
         if kind == "start":  # the planner asks before planning
             return [_message(json.dumps({"questions": [

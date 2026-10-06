@@ -5,7 +5,8 @@ The Manager-model mode spends one model call on every orchestration step
 fragile. Here the fixed loop is ordinary code:
 
     plan -> for each ready task: delegate -> validate -> review -> accept+integrate
-         -> recover failures by the kernel's routes -> finish
+         -> recover failures by the kernel's routes
+         -> review the whole project against shared criteria -> finish
 
 Models are used only where judgement is needed: the planner turns the request
 into success criteria and a task graph (validated by the kernel before anything
@@ -265,6 +266,7 @@ class WorkflowDriver:
             if run.status != "active":
                 return run.final_result or "The run is no longer active."
             self._recover_failed(run)
+            self._apply_project_fix_decision()
             waiting = self._handle_capabilities()
             if waiting:
                 return waiting
@@ -275,6 +277,11 @@ class WorkflowDriver:
             live = {k: t for k, t in run.tasks.items()
                     if t.status not in {TaskStatus.CANCELLED}}
             if live and all(t.status == TaskStatus.ACCEPTED for t in live.values()):
+                for task_id in self.controller.unintegrated_tasks():
+                    self.controller.accept_and_integrate(task_id, "Complete integration")
+                waiting = await self._review_project()
+                if waiting:
+                    return waiting
                 return self._finish()
             ready = [k for k, t in live.items() if k not in self._stuck and self._delegatable(run, t)]
             if not ready:
@@ -417,9 +424,97 @@ class WorkflowDriver:
 
     # Completion --------------------------------------------------------------
 
+    # Whole-project review ------------------------------------------------------
+
+    def _state(self) -> dict:
+        return dict(self._load_state() or {})
+
+    def _shared_criteria(self, run) -> list[str]:
+        coverage = self._state().get("coverage", {})
+        return [c for c in run.plan.completion_criteria if len(coverage.get(c, [])) > 1]
+
+    async def _review_project(self) -> str | None:
+        """Hold the finished project to the success criteria several tasks share.
+
+        Returns a message when the run must wait for its owner, or None when it
+        may complete. Passing is remembered for exactly the accepted work it
+        judged, so a later acceptance is judged again.
+        """
+        run = self.controller.inspect()
+        shared = self._shared_criteria(run)
+        if not shared or self.controller.workspaces is None:
+            return None
+        state = self._state()
+        judged = sorted(run.accepted_artifacts)
+        previous = state.get("project_review") or {}
+        if previous.get("accepted") == judged and (previous.get("passed") or previous.get("decision") == "rejected"):
+            return None
+        try:
+            report, results = await self.controller.review_project(shared)
+        except (UsageBudgetExceeded, asyncio.CancelledError):
+            raise
+        except Exception as exc:
+            logger.warning("Whole-project review could not complete: %r", exc)
+            return ("The finished project could not be reviewed as a whole (" + str(exc)[:300]
+                    + "). Continue the run to try again.")
+        record = {"accepted": judged, "passed": report.passed, "criteria": shared,
+                  "reason": report.reason[:2000], "checks": [r["check"] for r in results]}
+        if report.passed:
+            self._save_state({**state, "project_review": record})
+            return None
+        unmet = [shared[v.item - 1] for v in report.verdicts if not v.met and 0 < v.item <= len(shared)] or shared
+        if run.plan.revision >= run.plan.max_replans:
+            # No plan revisions left to add a fix: finish, and say so in the result.
+            self._save_state({**state, "project_review": {**record, "decision": "no_replans_left",
+                                                          "unmet": unmet}})
+            return None
+        accepted = [t for t in run.tasks.values() if t.status == TaskStatus.ACCEPTED]
+        developer = [t for t in accepted if t.capability.value == "developer_sandbox"]
+        checks = sorted({c for t in developer for c in t.required_checks}) if developer else ["result_schema"]
+        fix_id = f"project-fix-{run.plan.revision + 1}"
+        packet = TaskPacket(
+            task_id=fix_id, role="Integration specialist",
+            objective="Change the finished project so that it meets: " + "; ".join(unmet),
+            deliverable=(report.fix.strip() or "The smallest change to the integrated project that meets the "
+                         "listed success criteria, with tests"),
+            context=("A whole-project review of the integrated code found: " + report.reason)[:4000],
+            constraints=["Keep everything already accepted working; change only what the criteria need"],
+            dependencies=[t.id for t in accepted],
+            acceptance_criteria=unmet,
+            stop_condition="The project meets the listed criteria and its checks pass, or genuinely blocked")
+        proposal, _ = self.controller.propose_replan(
+            trigger=("The finished project does not yet meet a success criterion its tasks share. "
+                     "Whole-project review: " + (report.reason.strip() or "no reason given"))[:600],
+            evidence=[report.reason[:1000] or "Whole-project review failed"] + report.evidence[:5],
+            add=[packet], remove=[], reopen=[],
+            add_capabilities=["developer_sandbox" if developer else "model_only"], add_checks=[checks])
+        self._save_state({**state, "project_review": {**record, "unmet": unmet, "proposal_id": proposal.id,
+                                                      "fix_task": fix_id}})
+        return ("Waiting for your decision: the finished project does not yet meet "
+                + "; ".join(unmet) + ". Cavman proposes one more task to fix it.")
+
+    def _apply_project_fix_decision(self) -> None:
+        """Apply an approved fix from the whole-project review, or record that the owner declined it."""
+        state = self._state()
+        review = state.get("project_review") or {}
+        proposal_id = review.get("proposal_id")
+        run = self.controller.inspect()
+        proposal = run.replans.get(proposal_id) if proposal_id else None
+        if proposal is None or review.get("fix_task") in run.tasks or review.get("decision"):
+            return
+        approval = run.approvals.get(proposal.approval_id) if proposal.approval_id else None
+        if approval is None or approval.status == ApprovalStatus.PENDING:
+            return
+        if approval.status == ApprovalStatus.APPROVED:
+            self.controller.apply_replan(proposal_id)
+            coverage = state.get("coverage", {})
+            for criterion in review.get("unmet", []):
+                coverage.setdefault(criterion, []).append(review["fix_task"])
+            self._save_state({**state, "coverage": coverage})
+        else:
+            self._save_state({**state, "project_review": {**review, "decision": "rejected"}})
+
     def _finish(self) -> str:
-        for task_id in self.controller.unintegrated_tasks():
-            self.controller.accept_and_integrate(task_id, "Complete integration")
         run = self.controller.inspect()
         coverage = (self._load_state() or {}).get("coverage", {})
         evidence = {}
@@ -431,6 +526,17 @@ class WorkflowDriver:
         summary = "Delivered {} accepted task{}: {}.".format(
             len(accepted), "" if len(accepted) == 1 else "s",
             "; ".join(f"{t.packet.role} — {t.packet.objective.strip()}" for t in accepted))
+        review = (self._load_state() or {}).get("project_review") or {}
+        if review.get("passed"):
+            summary += (" The finished project was reviewed as a whole against {} shared success "
+                        "criteri{}{}.").format(len(review["criteria"]), "on" if len(review["criteria"]) == 1 else "a",
+                                              ", with its checks run together" if review.get("checks") else "")
+        elif review.get("decision") == "rejected":
+            summary += (" Note: the whole-project review found that the project does not meet: "
+                        + "; ".join(review.get("unmet", [])) + ". You chose to finish without the proposed fix.")
+        elif review.get("decision") == "no_replans_left":
+            summary += (" Note: the whole-project review found that the project does not meet: "
+                        + "; ".join(review.get("unmet", [])) + ". No plan revisions were left to fix it.")
         self.core.complete(self.run_id, summary, criterion_evidence=evidence)
         return "Build complete. " + summary
 
