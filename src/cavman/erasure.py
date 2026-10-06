@@ -23,6 +23,7 @@ _HEX_ID = re.compile(r"^[0-9a-f]{32}$")
 
 
 def _purge_sessions(sessions_db: Path, run_ids: list[str]) -> None:
+    # Only runs from the retired manager mode have conversation sessions; erase them too.
     if not run_ids or not sessions_db.exists():
         return
     connection = sqlite3.connect(str(sessions_db))

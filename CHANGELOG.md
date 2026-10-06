@@ -6,6 +6,51 @@
 - When it fails, Cavman proposes one more task, written from the reviewer's suggested fix, to make the project meet the missed criteria. Adding a task changes the plan, so the kernel asks the owner to approve it: the Change the plan card says what the review found. If approved, the task runs and the project is reviewed again. If declined, the run completes and its result says which criteria the review found unmet. If no plan revisions are left, the result says so too.
 - Runs with no shared criterion are unchanged. A passing review is noted in the run's result.
 
+## 2026-10-02 — Email when a build needs you
+
+- When a build is ready, waits for a decision, reaches its budget or stops early, its owner gets an email with a link to the run. Builds can take half an hour, so people no longer have to keep the tab open. A build the user stopped themselves is not emailed.
+- The API lists finished jobs nobody has been told about at `GET /api/notices` and records each one at `POST /api/notices/{job_id}/sent`; both need the service token and are about no single user. Jobs that ended more than six hours earlier are never offered, so a server's first start does not mail old builds. Account deletion removes the records.
+- The web server, which holds the email provider and the addresses, checks every `CAVMAN_NOTICE_POLL_SECONDS` (default 60) and emails only verified addresses. A failed send is retried on the next pass. `CAVMAN_BUILD_EMAILS=0` turns it off for the server.
+- Settings has a new Email panel with "Email me about my builds", on by default.
+- A build that stops to ask its owner questions before planning is emailed too ("Cavman has questions about your build").
+
+## 2026-10-02 — Cavman can ask before it plans
+
+- When a request is ambiguous in a way that changes what gets built, the planner may return up to three short questions instead of a plan. It may do this once per run. The run then shows **Needs your input** with the questions, and appears under "Waiting for your decision" on the overview. The answer, given on the run page, is stored as a run instruction and continues the build. The planner then gets the questions and answers and must plan, using sensible defaults for anything still open. A second round of questions is refused and the planner retries.
+- The API reports the state `input_needed` and the run detail lists `questions`. Nothing is spent on specialists before the answer.
+
+## 2026-10-01 — Give a build instructions while it runs
+
+- The run page has *Add an instruction* while a build is executing, and the *Continue* dialog's instruction box now works in workflow mode too (it used to be refused). Instructions are stored beside the run (`run_instructions`, at most 20 a run), listed under the request on the run page, and included in the export through the run detail.
+- The workflow driver reads them at the start of every round. Specialists starting work from then on get them in their instructions, newest winning over the task packet where they conflict. Reviewers get them as `owner_instructions` and fail work that ignores one that applies. Work already accepted is not redone; a follow-up run is the way to change it.
+- New `POST /api/runs/{id}/instructions`. Manager mode keeps its own path (the message goes to the Manager on Continue).
+
+## 2026-10-02 — The site speaks to developers
+
+- Link previews and the browser tab now say "Cavman — AI builds that have to prove they work", with a description naming who it is for (developers) and what it does best (Python and TypeScript libraries, CLIs and API cores, handed over after real tests and a second review). The dig-site joke stays in the landing page's headline.
+- The last web-app examples are gone: the How it works flow and the landing page's example run now show a Python CLI that renames photos by date, with Python, TypeScript, API, test and docs specialists, and the new-build placeholder models a good, testable request.
+
+## 2026-10-06 — Sentry 11
+
+- `@sentry/nextjs` 10 → 11. Sentry 11 drops `sendDefaultPii` and collects every kind of data by default, now including local variable values in stack frames. The web server turns each category off in `dataCollection` (user, cookies, bodies, query strings, response headers, stack-frame variables and the rest) and keeps only the request headers `scrubEvent` already kept, so reports carry no more than before.
+
+## 2026-10-02 — Manager mode is retired
+
+- Every build now runs the workflow driver, where plain code drives plan, delegate, validate, review and accept, and models only plan, build and review. The original mode, where a Manager model drove each step through tool calls, used far more model calls and was never used on cavman.dev. It is gone, along with its scripted test models, the `--orchestration` flag of the live campaign, `CAVMAN_MANAGER_MAX_TURNS`, and the per-run conversation sessions it kept in local SQLite.
+- `CAVMAN_ORCHESTRATION=manager` now stops the API and worker at startup with a message saying so, instead of quietly running something different. `workflow` is still accepted.
+- Runs and the system view no longer report an `orchestration` field. The Continue dialog no longer has an instruction box. It only appeared in manager mode.
+- Erasing an account still deletes any old manager-mode sessions for its runs.
+
+## 2026-10-06 — source-map-js 1.2.2
+
+- `source-map-js` 1.2.1 → 1.2.2 in the web lockfile for GHSA-68fv-2mgg-jv7q (high: event-loop denial of service from crafted source maps). The advisory appeared after 2026-10-05 and failed `npm audit` in CI on every branch.
+
+## 2026-10-02 — Start from a private GitHub repository
+
+- A new project can start from a private GitHub repository the user can read. The web server reads the user's own GitHub token from the encrypted auth store, only when the account has granted the `repo` scope and the request names a repository. It sends the token to the API in an `X-Cavman-GitHub-Token` header the browser cannot set. The importer uses it for GitHub's metadata and the download, and never stores or logs it.
+- The operator's import token (`CAVMAN_GITHUB_IMPORT_TOKEN`) still only raises rate limits: a private repository is refused unless the importing user's own token is present.
+- When a repository is private, or not found without a token, the API answers with `needs_scope: "repo"`. The New build form then offers "Give Cavman access to your GitHub repositories" and, after GitHub, returns to the form with the request and repository filled in. The project records whether its source was private.
+
 ## 2026-10-01 — Accessibility, phones, Firefox and Safari
 
 - New end-to-end checks (`web/e2e/quality.spec.ts`): every public page, every signed-in page, a run waiting for approval and a completed run are scanned with axe-core for WCAG 2.1 A and AA, and must be no wider than the screen.

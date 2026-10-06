@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { AccountData } from "@/components/app/account-data";
+import { BuildEmailsToggle } from "@/components/app/build-emails-toggle";
 import { ChangeEmail } from "@/components/app/change-email";
 import { TwoFactorSettings } from "@/components/app/two-factor-settings";
 import { SecurityPanel } from "@/components/app/security-panel";
@@ -54,6 +55,9 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             <p role="status" className="mt-3 text-sm text-ok">Your email address was changed.</p>
           ) : null}
           <div className="mt-4"><ChangeEmail email={user.email} verified={user.emailVerified} /></div>
+        </Panel>
+        <Panel title="Email" description="Builds can take a while. Cavman can tell you when one is worth coming back for.">
+          <BuildEmailsToggle initial={current?.user.buildEmails !== false} />
         </Panel>
         <Panel title="GitHub" description="Cavman never pushes or creates repositories without your explicit approval.">
           <p className="text-sm text-fg-soft">

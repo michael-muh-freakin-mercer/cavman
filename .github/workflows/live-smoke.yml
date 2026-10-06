@@ -62,7 +62,7 @@ jobs:
               sys.exit("::error::builds must be 1-10, run budget at most $5, total at most $20")
           EOF
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Install the isolation backend
         run: |
@@ -72,7 +72,7 @@ jobs:
             sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           fi
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
 
@@ -103,7 +103,7 @@ jobs:
         if: always()
         run: cat "$RUNNER_TEMP"/live-report/*.md >> "$GITHUB_STEP_SUMMARY" || true
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: live-smoke-report

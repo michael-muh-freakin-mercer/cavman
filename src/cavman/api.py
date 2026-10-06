@@ -24,7 +24,7 @@ import re
 import shutil
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -34,7 +34,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from walter.orchestration import GateError
 
-from . import __version__
+from . import __version__, importer
 from .config import EXECUTOR_PROVIDER, Settings
 from .accounts import account_disk_bytes, account_usage, cost_history, server_usage
 from .delivery import deliver_run
@@ -86,6 +86,20 @@ class ApprovalDecisionRequest(BaseModel):
 
 class ContinueRequest(BaseModel):
     message: str = Field(default="", max_length=4000)
+
+
+class InstructionRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=4000)
+
+    @field_validator("message")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Write an instruction.")
+        return value
+
+
+MAX_INSTRUCTIONS = 20
 
 
 class AbandonRequest(BaseModel):
@@ -164,6 +178,8 @@ def principal(request: Request, authorization: Annotated[str | None, Header()] =
 
 
 User = Annotated[str, Depends(principal)]
+# The importing user's GitHub token, set only by the web server from its auth store.
+GitHubToken = Annotated[str | None, Header(max_length=500)]
 
 # Lists are paged newest first. A cursor is the URL-safe base64 of
 # "<created_at>~<id>" of the last item shown; keyset paging stays correct while
@@ -191,6 +207,24 @@ def next_cursor(rows: list, limit: int) -> str | None:
         return None
     last = rows[limit - 1]
     return base64.urlsafe_b64encode(f"{last.created_at}~{last.id}".encode()).decode()
+
+
+def service(request: Request, authorization: Annotated[str | None, Header()] = None) -> None:
+    """Authenticate the calling web server for work that is about no single user."""
+    expected = f"Bearer {request.app.state.settings.api_token}"
+    if not authorization or not hmac.compare_digest(authorization.encode(), expected.encode()):
+        raise HTTPException(401, "Missing or invalid service credentials.")
+
+
+Service = Annotated[None, Depends(service)]
+
+# A finished job is worth an email only in these states; anything else either
+# has more work queued or was ended by the user, who already knows.
+NOTICE_STATES = frozenset({"complete", "approval_needed", "input_needed", "budget_reached", "paused", "failed",
+                           "blocked"})
+# Jobs that ended longer ago than this are never emailed, so the first start of
+# a server with notices does not mail a backlog of old builds.
+NOTICE_WINDOW = timedelta(hours=6)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -225,9 +259,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         project = platform.project_by_id(project_id)
         return project.name if project else "Project"
 
+    def pending_questions(record: RunRecord, run) -> list[str]:
+        """Questions the planner asked that the run is still waiting on (before any plan exists)."""
+        from walter.adapter import INITIAL_COMPLETION_CRITERION
+
+        if run.status != "active" or run.plan.completion_criteria != [INITIAL_COMPLETION_CRITERION]:
+            return []
+        return list((platform.workflow_state(record.id) or {}).get("questions") or [])
+
+    def with_questions(view: dict, record: RunRecord, run) -> dict:
+        questions = pending_questions(record, run)
+        if questions and view["state"] == "waiting":
+            view.update(state="input_needed", label="Needs your input",
+                        explanation="Cavman has a few questions before it plans this build. Answer them, "
+                                    "and it continues.")
+        return view
+
     def summary(record: RunRecord) -> dict:
         run = engine.load(record.id)
-        return projector.run_summary(run, record, platform.jobs(record.id), project_name(record.project_id))
+        return with_questions(projector.run_summary(run, record, platform.jobs(record.id),
+                                                    project_name(record.project_id)), record, run)
 
     def delivery_view(run_id: str) -> dict | None:
         delivery = platform.delivery(run_id)
@@ -256,7 +307,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         view = projector.run_detail(run, record, platform.jobs(record.id), engine.events(record.id),
                                     project_name(record.project_id), delivery_view(record.id))
         view["publication"] = publication_view(record.id)
-        return view
+        view["instructions"] = [{key: item[key] for key in ("id", "text", "created_at")}
+                                for item in platform.instructions(record.id)]
+        view["questions"] = pending_questions(record, run)
+        return with_questions(view, record, run)
+
+    @app.exception_handler(importer.RepositoryImportError)
+    async def import_refused(_request, exc: importer.RepositoryImportError):
+        return JSONResponse({"detail": str(exc), "needs_scope": exc.needs_scope}, status_code=exc.status)
 
     @app.exception_handler(GateError)
     async def gate_error(_request, exc: GateError):
@@ -308,6 +366,42 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                   f"cavman_model_calls_without_cost_month {spend['calls_without_cost']}"]
         return PlainTextResponse("\n".join(lines) + "\n", media_type="text/plain; version=0.0.4")
 
+    # Notices --------------------------------------------------------------
+    # The web server polls these and emails the owner, since it holds the
+    # email provider and the addresses; the API holds neither.
+
+    @app.get("/api/notices")
+    def notices(_service: Service):
+        since = (datetime.now(timezone.utc) - NOTICE_WINDOW).isoformat()
+        found = []
+        for job in platform.unnoticed_jobs(since):
+            record = platform.run_by_id(job.run_id)
+            jobs = platform.jobs(job.run_id) if record else []
+            if record is None or not jobs or jobs[-1].id != job.id:
+                platform.mark_noticed(job)  # gone, or superseded by newer work
+                continue
+            run = engine.load(record.id)
+            state = with_questions(dict(projector.run_state(run, jobs)), record, run)
+            if state["state"] not in NOTICE_STATES:
+                platform.mark_noticed(job)
+                continue
+            view = summary(record)
+            found.append({"job_id": job.id, "run_id": record.id, "owner_id": record.owner_id,
+                          "project_name": view["project_name"],
+                          "prompt": projector.redact(record.prompt, limit=200),
+                          "state": state["state"], "label": state["label"],
+                          "explanation": state["explanation"],
+                          "tasks_accepted": view["tasks_accepted"], "tasks_total": view["tasks_total"],
+                          "cost_usd": view["cost_usd"], "finished_at": job.finished_at})
+        return {"notices": found}
+
+    @app.post("/api/notices/{job_id}/sent", status_code=204)
+    def notice_sent(job_id: str, _service: Service):
+        job = platform.job_by_id(job_id) if re.fullmatch(r"[0-9a-f]{32}", job_id) else None
+        if job is None:
+            raise HTTPException(404, "Job not found.")
+        platform.mark_noticed(job)
+
     # System -----------------------------------------------------------
 
     @app.get("/api/system")
@@ -322,7 +416,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             modes.append({"mode": mode, "available": mode in configured,
                           "manager_model": manager, "worker_model": worker})
         return {"version": __version__, "executor": settings.executor, "model_modes": modes,
-                "orchestration": settings.orchestration, "provider": provider,
+                "provider": provider,
                 "sandbox": _sandbox_status(settings.sandbox_backend),
                 "budget": {"default_usd": settings.default_budget_usd, "max_usd": settings.max_budget_usd,
                            "account_monthly_usd": settings.account_monthly_budget_usd,
@@ -427,7 +521,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Builds -----------------------------------------------------------
 
     @app.post("/api/builds", status_code=201)
-    def create_build(body: BuildRequest, user: User):
+    def create_build(body: BuildRequest, user: User, x_cavman_github_token: GitHubToken = None):
         if settings.executor == EXECUTOR_PROVIDER:
             status = _provider_status()
             if not status["configured"]:
@@ -456,7 +550,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         else:
             name = (body.name or "").strip() or project_name_from_prompt(body.prompt)
             project_id = new_id()
-            source = new_project_repo(project_id, name, body.prompt, repository_url)
+            source = new_project_repo(project_id, name, body.prompt, repository_url, x_cavman_github_token)
             try:
                 project = platform.create_project(user, name, body.prompt,
                                                   {**body.settings.model_dump(exclude_none=True), **source},
@@ -473,26 +567,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # Projects ---------------------------------------------------------
 
-    def new_project_repo(project_id: str, name: str, description: str, repository_url: str | None) -> dict:
-        """Create the project repository, empty or from a public GitHub repository."""
+    def new_project_repo(project_id: str, name: str, description: str, repository_url: str | None,
+                         user_token: str | None = None) -> dict:
+        """Create the project repository, empty or from a GitHub repository.
+
+        ``user_token`` is the user's own GitHub token, attached by the web server
+        (never the browser) when the account has granted repository access. It
+        is used for this one download and not stored."""
         if not repository_url:
             engine.init_project_repo(project_id, name, description)
             return {}
-        from . import importer
         try:
             imported = importer.import_repository(
                 repository_url, engine.project_repo(project_id), name, api_url=settings.github_api_url,
                 max_mb=settings.import_max_mb, max_files=settings.import_max_files,
-                token=settings.github_import_token)
-        except importer.RepositoryImportError as exc:
-            shutil.rmtree(engine.project_repo(project_id).parent, ignore_errors=True)
-            raise HTTPException(exc.status, str(exc)) from None
+                token=settings.github_import_token, user_token=user_token)
         except Exception:
             shutil.rmtree(engine.project_repo(project_id).parent, ignore_errors=True)
             raise
         return {"repository_url": imported.url,
                 "source": {"url": imported.url, "commit": imported.commit, "branch": imported.branch,
-                           "files": imported.files, "dropped": list(imported.dropped)}}
+                           "files": imported.files, "dropped": list(imported.dropped),
+                           "private": imported.private}}
 
     def project_view(project, runs: list[RunRecord]) -> dict:
         summaries = [summary(r) for r in runs]
@@ -514,7 +610,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"projects": items, "next": next_cursor(projects, limit)}
 
     @app.post("/api/projects", status_code=201)
-    def create_project(body: ProjectRequest, user: User):
+    def create_project(body: ProjectRequest, user: User, x_cavman_github_token: GitHubToken = None):
         if platform.project_count(user) >= settings.max_projects:
             raise HTTPException(403, f"You have reached the limit of {settings.max_projects} projects.")
         act(user)
@@ -523,7 +619,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             rate_limit(user, "import", settings.imports_per_hour, 3600, "repository imports per hour")
         project_id = new_id()
         source = new_project_repo(project_id, body.name.strip(), body.description,
-                                  (body.repository_url or "").strip() or None)
+                                  (body.repository_url or "").strip() or None, x_cavman_github_token)
         try:
             project = platform.create_project(user, body.name.strip(), body.description, source,
                                               project_id=project_id)
@@ -660,17 +756,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(409, "This run has finished; start a new build instead.")
         if settings.executor == EXECUTOR_PROVIDER and not _provider_status()["configured"]:
             raise HTTPException(503, "Cavman's model provider is not configured on the server.")
-        if body.message.strip() and settings.orchestration != "manager":
-            raise HTTPException(422, "Follow-up instructions are not supported by this server yet. "
-                                     "Continue without an instruction, or start a new build.")
         require_account_allowance(user)
         if platform.active_job(record.id) is None:
             require_capacity(user, new_project=False)
             rate_limit(user, "build", settings.builds_per_hour, 3600, "new builds per hour")
-        job, created = platform.enqueue(record.id, "continue", body.message.strip())
+        message = body.message.strip()
+        if message and platform.active_job(record.id) is not None:
+            raise HTTPException(409, "This run is already executing.")
+        job, created = platform.enqueue(record.id, "continue", message)
         if not created:
             raise HTTPException(409, "This run is already executing.")
+        if message:
+            # Instructions are kept instructions beside the run; every later step reads them.
+            platform.add_instruction(record.id, engine.redact(message, limit=4000))
         return {"job": projector.job(job)}
+
+    @app.post("/api/runs/{run_id}/instructions", status_code=201)
+    def add_instruction(run_id: str, body: InstructionRequest, user: User):
+        """Direction for a build while it runs: specialists and reviewers starting
+        work after this see it. Work already accepted is not redone."""
+        act(user)
+        record = owned_run(user, run_id)
+        if engine.load(record.id).status != "active":
+            raise HTTPException(409, "This run has finished. Ask for changes in a follow-up instead.")
+        if len(platform.instructions(record.id)) >= MAX_INSTRUCTIONS:
+            raise HTTPException(429, f"A run takes at most {MAX_INSTRUCTIONS} instructions.")
+        item = platform.add_instruction(record.id, engine.redact(body.message.strip(), limit=4000))
+        return {"instruction": {key: item[key] for key in ("id", "text", "created_at")}}
 
     @app.post("/api/runs/{run_id}/stop", status_code=202)
     def stop_run(run_id: str, user: User):

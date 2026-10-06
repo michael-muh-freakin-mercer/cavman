@@ -88,7 +88,6 @@ export function runDetail(overrides: Partial<RunDetail> = {}): RunDetail {
     project_name: "Booking app",
     prompt: "Build me a booking app",
     executor: "provider",
-    orchestration: "workflow",
     status: "completed",
     state: "complete",
     label: "Complete",
