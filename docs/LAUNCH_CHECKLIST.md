@@ -21,7 +21,7 @@ Approvals on record: live-model campaign spend up to **$50** (OpenRouter); misc 
 - [x] 🤖 Review must check delivered work against the plan, not just tests: that first build passed every review while missing planned items (launcher shortcut not delivered, vault not hidden) and taking secrets as command-line arguments (shell history) with non-atomic saves (reviewers now rule on every plan item and report findings by severity; an unmet or unruled item or a high or critical finding fails the review)
 - [x] 🤖 Confirm the stricter review with real models (live smoke 2026-09-30: 3 of 3 builds completed, $1.00; see `docs/live-campaign/`)
 - [x] 🤖 Measure what the stricter review costs (2026-10-02, `docs/live-campaign/README.md`: wide variance, mostly from reviews failed for reading no file and sent back as if the work were wrong; fixed): builds ran $0.14 to $0.67 against a $0.09 median before, and one took 33 minutes. Find out why reviewers asked for revisions and whether the requests were sound
-- [ ] 🤖 Check the finished project as a whole against each success criterion shared between tasks (reviews are per task today)
+- [x] 🤖 Check the finished project as a whole against each success criterion shared between tasks (the project's checks run together on the integrated code and a fresh reviewer rules on each shared criterion; a miss proposes one fix task for the owner to approve)
 
 ### 2. Stronger isolation for untrusted code
 - [x] 🧑 Choose a microVM or managed sandbox: E2B (free plan to start; upgrade before public launch for longer sandbox lifetimes and more concurrency)
@@ -86,14 +86,14 @@ Approvals on record: live-model campaign spend up to **$50** (OpenRouter); misc 
 - [x] 🤖 Cost estimate before a build starts (from what recent completed builds here actually cost, per model mode; plus the ceiling and the monthly allowance left)
 
 ### 11. Talking with a build
-- [ ] 🤖 Clarifying questions as first-class "Cavman needs your input" requests
-- [ ] 🤖 Instructions mid-run (workflow mode rejects messages today)
-- [ ] 🤖 Email when a build finishes or needs an approval
+- [x] 🤖 Clarifying questions as first-class "Cavman needs your input" requests (the planner may ask up to three questions once, before planning; the run shows them and the answer continues it)
+- [x] 🤖 Instructions mid-run (Add an instruction while a build runs, or with Continue; later specialists and reviewers follow it; accepted work is not redone)
+- [x] 🤖 Email when a build finishes or needs an approval (the API lists finished jobs at `/api/notices`; the web server emails verified owners every minute; off per user in Settings or for the server with `CAVMAN_BUILD_EMAILS=0`)
 
 ### 12. GitHub
 - [ ] 🤖 Publish flow end to end against github.com, including the scope upgrade (tested against a stand-in only)
 - [x] 🤖 Import a real public repository (`tests/test_github_live.py` imports octocat/Hello-World from github.com through the API; an advisory CI job runs it on every push)
-- [ ] 🤖 Private repository import with the user's token
+- [x] 🤖 Private repository import with the user's token (only the importing user's own token, with the `repo` scope, can import a private repository; the operator token never can; the token is used for the download only)
 - [x] 🤖 Push updates to an existing repository as a pull request (a later build of a published project pushes its verified commit to a new `cavman/<run>` branch and opens a pull request; refused unless it builds on the published code; tested against a stand-in)
 
 ### 13. Safe previews of built web apps
@@ -118,7 +118,7 @@ Approvals on record: live-model campaign spend up to **$50** (OpenRouter); misc 
 - [x] 🧑 Support contact channel (email only for now: support@cavman.dev, owner's decision 2026-10-02)
 
 ## P2: soon after launch
-- [ ] 🤖 Keep or retire manager mode (its conversation sessions are still local SQLite)
+- [x] 🤖 Keep or retire manager mode (retired 2026-10-02, owner's decision: every build runs the workflow driver, and `CAVMAN_ORCHESTRATION=manager` is refused at startup)
 - [ ] 🤖 More sandbox stacks (Go, Rust, Java)
 - [x] 🤖 Compare Budget / Balanced / Maximum Quality with real models (2026-10-02: deepseek-v4-flash too weak; suggest deepseek-v4-pro for Budget and Balanced, claude-sonnet-5.5 for Maximum Quality; set `CAVMAN_MODELS_*` to offer them)
 - [x] 🤖 Dependency update automation (Dependabot weekly for pip, npm and GitHub Actions: `.github/dependabot.yml`)

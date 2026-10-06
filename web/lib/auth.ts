@@ -84,6 +84,11 @@ const options = {
   },
   socialProviders: github,
   user: {
+    // Emails about the user's own builds (lib/build-emails.ts). On unless turned
+    // off in Settings; accounts from before this field read it as unset, which counts as on.
+    additionalFields: {
+      buildEmails: { type: "boolean" as const, required: false, defaultValue: true, input: false },
+    },
     // A verified address is changed only after the current address approves it
     // and the new one is verified, so a stolen session cannot quietly take the account.
     changeEmail: {
