@@ -11,7 +11,7 @@ const STAGES = [
   { n: "05", icon: PackageCheck, title: "Deliver", body: "Verify and return the assembled result.", detail: "Completion requires every success criterion to cite accepted work. You download exactly what was verified." },
 ];
 
-const SPECIALISTS = ["Product specialist", "Frontend specialist", "Backend specialist", "QA specialist", "DevOps specialist"];
+const SPECIALISTS = ["Python specialist", "TypeScript specialist", "API specialist", "Test specialist", "Docs specialist"];
 
 function FlowNode({ icon: Icon, title, caption, accent = false }: { icon: React.ElementType; title: string; caption: string; accent?: boolean }) {
   return (
@@ -86,7 +86,7 @@ export function HowItWorks({ signedIn }: { signedIn: boolean }) {
             </ul>
           </div>
           <figure className="flex flex-col items-center" aria-label="Flow from your prompt, through Cavman and its specialists, to a verified project">
-            <FlowNode icon={MessageSquareText} title="User Prompt" caption="“Build me a booking app for a tattoo studio”" />
+            <FlowNode icon={MessageSquareText} title="User Prompt" caption="“Build a Python CLI that renames photos by the date they were taken”" />
             <Down />
             <div className="panel flex w-full max-w-sm items-center gap-4 px-5 py-4 shadow-ember">
               <Cavman mood="dig" className="h-10 w-10" />

@@ -134,7 +134,7 @@ export function NewBuildForm({
           maxLength={MAX_PROMPT_LENGTH}
           rows={7}
           autoFocus
-          placeholder="Build me a booking app for a tattoo studio. Clients pick an artist and a time slot; the studio gets an email for each booking."
+          placeholder="Build a Python CLI that renames photos by the date they were taken. Dry run by default; skip files with no date; never overwrite an existing file. Include tests."
           className="block w-full resize-y rounded-md bg-surface p-5 text-base leading-relaxed text-fg placeholder:text-faint focus:outline-none focus-visible:shadow-none focus-visible:outline-none sm:text-lg"
         />
       </div>
