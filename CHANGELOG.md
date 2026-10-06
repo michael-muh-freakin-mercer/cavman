@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-06 — source-map-js 1.2.2
+
+- `source-map-js` 1.2.1 → 1.2.2 in the web lockfile for GHSA-68fv-2mgg-jv7q (high: event-loop denial of service from crafted source maps). The advisory appeared after 2026-10-05 and failed `npm audit` in CI on every branch.
+
 ## 2026-10-02 — Start from a private GitHub repository
 
 - A new project can start from a private GitHub repository the user can read. The web server reads the user's own GitHub token from the encrypted auth store, only when the account has granted the `repo` scope and the request names a repository. It sends the token to the API in an `X-Cavman-GitHub-Token` header the browser cannot set. The importer uses it for GitHub's metadata and the download, and never stores or logs it.
