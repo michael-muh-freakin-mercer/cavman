@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { AccountData } from "@/components/app/account-data";
+import { BuildEmailsToggle } from "@/components/app/build-emails-toggle";
 import { BillingPanel } from "@/components/app/billing-panel";
 import { ChangeEmail } from "@/components/app/change-email";
 import { TwoFactorSettings } from "@/components/app/two-factor-settings";
@@ -56,6 +57,9 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             <p role="status" className="mt-3 text-sm text-ok">Your email address was changed.</p>
           ) : null}
           <div className="mt-4"><ChangeEmail email={user.email} verified={user.emailVerified} /></div>
+        </Panel>
+        <Panel title="Email" description="Builds can take a while. Cavman can tell you when one is worth coming back for.">
+          <BuildEmailsToggle initial={current?.user.buildEmails !== false} />
         </Panel>
         {billing.ok && billing.data.enabled ? (
           <Panel id="billing" title="Billing" description="Your plan and usage credit. Payments are made through Stripe.">

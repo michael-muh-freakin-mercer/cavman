@@ -101,6 +101,12 @@ CREATE TABLE IF NOT EXISTS rate_events(
   at REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS rate_events_owner ON rate_events(owner_id, action, at);
+CREATE TABLE IF NOT EXISTS job_notices(
+  job_id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  noticed_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS job_notices_run ON job_notices(run_id);
 CREATE TABLE IF NOT EXISTS run_instructions(
   id TEXT PRIMARY KEY,
   run_id TEXT NOT NULL REFERENCES runs(id),
@@ -441,7 +447,7 @@ class PlatformStore:
                 raise ActiveWork("A build is running. Stop it, or wait for it to finish, before deleting your account.")
             runs = [row[0] for row in db.execute(owned + " ORDER BY created_at", (owner_id,))]
             projects = [row[0] for row in db.execute("SELECT id FROM projects WHERE owner_id=?", (owner_id,))]
-            for table in ("publications", "workflow_state", "deliveries", "run_instructions", "jobs",
+            for table in ("publications", "workflow_state", "deliveries", "job_notices", "run_instructions", "jobs",
                           "retired_runs"):
                 db.execute(f"DELETE FROM {table} WHERE run_id IN ({owned})", (owner_id,))
             db.execute("DELETE FROM publications WHERE owner_id=?", (owner_id,))
@@ -654,6 +660,26 @@ class PlatformStore:
             db.execute("UPDATE jobs SET status=?, outcome=?, detail=?, finished_at=?, lease_owner=NULL "
                        "WHERE id=? AND lease_owner=? AND status='running'",
                        (status, outcome, detail, _now(), job_id, worker_id))
+
+    def unnoticed_jobs(self, since: str, limit: int = 50) -> list[Job]:
+        """Jobs that ended at or after ``since`` and nobody has been told about yet.
+
+        Cancelled jobs are left out: the user stopped them and already knows.
+        """
+        return [self._job(row) for row in self._query(
+            "SELECT * FROM jobs WHERE status IN ('succeeded','failed') AND finished_at >= ? "
+            "AND NOT EXISTS (SELECT 1 FROM job_notices WHERE job_notices.job_id = jobs.id) "
+            "ORDER BY finished_at LIMIT ?", (since, limit))]
+
+    def job_by_id(self, job_id: str) -> Job | None:
+        rows = self._query("SELECT * FROM jobs WHERE id=?", (job_id,))
+        return self._job(rows[0]) if rows else None
+
+    def mark_noticed(self, job: Job) -> None:
+        """Record that ``job``'s ending was told to its owner, or needs no telling."""
+        with self._write() as db:
+            db.execute("INSERT INTO job_notices VALUES(?,?,?) ON CONFLICT(job_id) DO NOTHING",
+                       (job.id, job.run_id, _now()))
 
     # Owner instructions ---------------------------------------------------
 

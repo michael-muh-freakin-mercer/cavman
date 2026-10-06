@@ -6,7 +6,11 @@ import { reportingEnabled, scrubEvent } from "@/lib/error-reporting";
 // Node.js server reports: no browser SDK, so the CSP stays as it is and no
 // visitor's browser talks to Sentry. See lib/error-reporting.ts for what is sent.
 export async function register() {
-  if (!reportingEnabled() || process.env.NEXT_RUNTIME !== "nodejs") return;
+  if (process.env.NEXT_RUNTIME !== "nodejs") return;
+  // Emails owners when a build finishes or needs them (lib/notice-poller.ts).
+  const { startNoticePoller } = await import("@/lib/notice-poller");
+  startNoticePoller();
+  if (!reportingEnabled()) return;
   const Sentry = await import("@sentry/nextjs");
   Sentry.init({
     dsn: process.env.SENTRY_DSN,

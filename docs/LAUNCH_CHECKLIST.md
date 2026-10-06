@@ -88,7 +88,7 @@ Approvals on record: live-model campaign spend up to **$50** (OpenRouter); misc 
 ### 11. Talking with a build
 - [x] 🤖 Clarifying questions as first-class "Cavman needs your input" requests (the planner may ask up to three questions once, before planning; the run shows them and the answer continues it)
 - [x] 🤖 Instructions mid-run (Add an instruction while a build runs, or with Continue; later specialists and reviewers follow it; accepted work is not redone)
-- [ ] 🤖 Email when a build finishes or needs an approval
+- [x] 🤖 Email when a build finishes or needs an approval (the API lists finished jobs at `/api/notices`; the web server emails verified owners every minute; off per user in Settings or for the server with `CAVMAN_BUILD_EMAILS=0`)
 
 ### 12. GitHub
 - [ ] 🤖 Publish flow end to end against github.com, including the scope upgrade (tested against a stand-in only)

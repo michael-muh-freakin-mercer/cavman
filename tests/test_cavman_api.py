@@ -1012,6 +1012,71 @@ def test_estimate_endpoint_returns_ceiling_and_allowance(client):
     assert client.get("/api/estimate").status_code == 401
 
 
+SERVICE = {"Authorization": f"Bearer {TOKEN}"}
+
+
+def test_notices_need_the_service_token_but_no_user(client):
+    assert client.get("/api/notices").status_code == 401
+    assert client.get("/api/notices", headers={"Authorization": "Bearer wrong"}).status_code == 401
+    assert client.get("/api/notices", headers=SERVICE).json() == {"notices": []}
+    assert client.post(f"/api/notices/{'0' * 32}/sent", headers=SERVICE).status_code == 404
+    assert client.post(f"/api/notices/{'0' * 32}/sent").status_code == 401
+
+
+def test_a_finished_build_is_noticed_once_until_marked_sent(client, settings):
+    run_id = build(client)["run_id"]
+    assert client.get("/api/notices", headers=SERVICE).json()["notices"] == []  # still queued
+    drain(settings)
+    [notice] = client.get("/api/notices", headers=SERVICE).json()["notices"]
+    assert notice["run_id"] == run_id and notice["owner_id"] == "alice"
+    assert notice["state"] == "complete" and notice["label"] == "Complete"
+    assert notice["tasks_accepted"] == notice["tasks_total"] == 2
+    assert notice["project_name"] and "tattoo studio" in notice["prompt"]
+    assert client.get("/api/notices", headers=SERVICE).json()["notices"] == [notice]  # not yet sent
+    assert client.post(f"/api/notices/{notice['job_id']}/sent", headers=SERVICE).status_code == 204
+    assert client.post(f"/api/notices/{notice['job_id']}/sent", headers=SERVICE).status_code == 204
+    assert client.get("/api/notices", headers=SERVICE).json()["notices"] == []
+
+
+def test_a_build_the_user_stopped_or_that_ended_long_ago_is_not_noticed(client, settings):
+    stopped = build(client)["run_id"]
+    client.post(f"/api/runs/{stopped}/stop", headers=ALICE)
+    old = build(client, prompt="Build me a habit tracker")["run_id"]
+    drain(settings)
+    platform = client.app.state.platform
+    [job] = platform.jobs(old)
+    with platform._write() as db:
+        db.execute("UPDATE jobs SET finished_at=? WHERE id=?", ("2026-01-01T00:00:00+00:00", job.id))
+    assert client.get("/api/notices", headers=SERVICE).json()["notices"] == []
+
+
+@needs_sandbox
+def test_a_build_waiting_for_approval_is_noticed(client, settings):
+    run_id = build(client, prompt="Booking core #approval")["run_id"]
+    drain(settings)
+    [notice] = client.get("/api/notices", headers=SERVICE).json()["notices"]
+    assert notice["run_id"] == run_id and notice["state"] == "approval_needed"
+
+
+@needs_sandbox
+def test_a_build_with_questions_for_its_owner_is_noticed(client, settings):
+    run_id = build(client, prompt="Booking app #questions")["run_id"]
+    drain(settings)
+    [notice] = client.get("/api/notices", headers=SERVICE).json()["notices"]
+    assert notice["run_id"] == run_id and notice["state"] == "input_needed"
+    assert notice["explanation"].startswith("Cavman has a few questions")
+
+
+def test_a_build_that_reached_its_ceiling_is_noticed(settings):
+    from dataclasses import replace
+    limited = replace(settings, default_max_model_calls=3)
+    with TestClient(create_app(limited)) as client:
+        run_id = build(client)["run_id"]
+        drain(limited)
+        [notice] = client.get("/api/notices", headers=SERVICE).json()["notices"]
+    assert notice["run_id"] == run_id and notice["state"] == "budget_reached"
+
+
 @needs_sandbox
 def test_a_build_can_ask_its_owner_questions_before_planning(client, settings, seen_instructions):
     run_id = build(client, prompt="Booking app #questions")["run_id"]

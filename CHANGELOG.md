@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-02 — Email when a build needs you
+
+- When a build is ready, waits for a decision, reaches its budget or stops early, its owner gets an email with a link to the run. Builds can take half an hour, so people no longer have to keep the tab open. A build the user stopped themselves is not emailed.
+- The API lists finished jobs nobody has been told about at `GET /api/notices` and records each one at `POST /api/notices/{job_id}/sent`; both need the service token and are about no single user. Jobs that ended more than six hours earlier are never offered, so a server's first start does not mail old builds. Account deletion removes the records.
+- The web server, which holds the email provider and the addresses, checks every `CAVMAN_NOTICE_POLL_SECONDS` (default 60) and emails only verified addresses. A failed send is retried on the next pass. `CAVMAN_BUILD_EMAILS=0` turns it off for the server.
+- Settings has a new Email panel with "Email me about my builds", on by default.
+- A build that stops to ask its owner questions before planning is emailed too ("Cavman has questions about your build").
+
 ## 2026-10-02 — Cavman can ask before it plans
 
 - When a request is ambiguous in a way that changes what gets built, the planner may return up to three short questions instead of a plan. It may do this once per run. The run then shows **Needs your input** with the questions, and appears under "Waiting for your decision" on the overview. The answer, given on the run page, is stored as a run instruction and continues the build. The planner then gets the questions and answers and must plan, using sensible defaults for anything still open. A second round of questions is refused and the planner retries.

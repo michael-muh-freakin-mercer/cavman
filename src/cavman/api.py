@@ -24,7 +24,7 @@ import re
 import shutil
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -184,12 +184,6 @@ def principal(request: Request, authorization: Annotated[str | None, Header()] =
 
 User = Annotated[str, Depends(principal)]
 
-
-def service(request: Request, authorization: Annotated[str | None, Header()] = None) -> None:
-    """Authenticate the calling web server for requests on no user's behalf."""
-    expected = f"Bearer {request.app.state.settings.api_token}"
-    if not authorization or not hmac.compare_digest(authorization.encode(), expected.encode()):
-        raise HTTPException(401, "Missing or invalid service credentials.")
 # The importing user's GitHub token, set only by the web server from its auth store.
 GitHubToken = Annotated[str | None, Header(max_length=500)]
 
@@ -219,6 +213,24 @@ def next_cursor(rows: list, limit: int) -> str | None:
         return None
     last = rows[limit - 1]
     return base64.urlsafe_b64encode(f"{last.created_at}~{last.id}".encode()).decode()
+
+
+def service(request: Request, authorization: Annotated[str | None, Header()] = None) -> None:
+    """Authenticate the calling web server for work that is about no single user."""
+    expected = f"Bearer {request.app.state.settings.api_token}"
+    if not authorization or not hmac.compare_digest(authorization.encode(), expected.encode()):
+        raise HTTPException(401, "Missing or invalid service credentials.")
+
+
+Service = Annotated[None, Depends(service)]
+
+# A finished job is worth an email only in these states; anything else either
+# has more work queued or was ended by the user, who already knows.
+NOTICE_STATES = frozenset({"complete", "approval_needed", "input_needed", "budget_reached", "paused", "failed",
+                           "blocked"})
+# Jobs that ended longer ago than this are never emailed, so the first start of
+# a server with notices does not mail a backlog of old builds.
+NOTICE_WINDOW = timedelta(hours=6)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -365,6 +377,42 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                   "# TYPE cavman_model_calls_without_cost_month gauge",
                   f"cavman_model_calls_without_cost_month {spend['calls_without_cost']}"]
         return PlainTextResponse("\n".join(lines) + "\n", media_type="text/plain; version=0.0.4")
+
+    # Notices --------------------------------------------------------------
+    # The web server polls these and emails the owner, since it holds the
+    # email provider and the addresses; the API holds neither.
+
+    @app.get("/api/notices")
+    def notices(_service: Service):
+        since = (datetime.now(timezone.utc) - NOTICE_WINDOW).isoformat()
+        found = []
+        for job in platform.unnoticed_jobs(since):
+            record = platform.run_by_id(job.run_id)
+            jobs = platform.jobs(job.run_id) if record else []
+            if record is None or not jobs or jobs[-1].id != job.id:
+                platform.mark_noticed(job)  # gone, or superseded by newer work
+                continue
+            run = engine.load(record.id)
+            state = with_questions(dict(projector.run_state(run, jobs)), record, run)
+            if state["state"] not in NOTICE_STATES:
+                platform.mark_noticed(job)
+                continue
+            view = summary(record)
+            found.append({"job_id": job.id, "run_id": record.id, "owner_id": record.owner_id,
+                          "project_name": view["project_name"],
+                          "prompt": projector.redact(record.prompt, limit=200),
+                          "state": state["state"], "label": state["label"],
+                          "explanation": state["explanation"],
+                          "tasks_accepted": view["tasks_accepted"], "tasks_total": view["tasks_total"],
+                          "cost_usd": view["cost_usd"], "finished_at": job.finished_at})
+        return {"notices": found}
+
+    @app.post("/api/notices/{job_id}/sent", status_code=204)
+    def notice_sent(job_id: str, _service: Service):
+        job = platform.job_by_id(job_id) if re.fullmatch(r"[0-9a-f]{32}", job_id) else None
+        if job is None:
+            raise HTTPException(404, "Job not found.")
+        platform.mark_noticed(job)
 
     # System -----------------------------------------------------------
 
