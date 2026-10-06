@@ -22,6 +22,7 @@ import json
 import math
 import re
 import shutil
+import subprocess
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -108,7 +109,9 @@ class AbandonRequest(BaseModel):
 
 
 class PublishRequest(BaseModel):
-    name: str = Field(min_length=1, max_length=100)
+    # A new repository, or a pull request on the one an earlier build of this project created.
+    mode: Literal["new_repository", "pull_request"] = "new_repository"
+    name: str = Field(default="", max_length=100)
     private: bool = True
     confirm: Literal[True]
     github_token: str = Field(min_length=10, max_length=500)
@@ -308,13 +311,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if found is None:
             return None
         return {"repository": found["repo_full_name"], "url": found["html_url"], "commit": found["commit_sha"],
-                "private": bool(found["private"]), "created_at": found["created_at"]}
+                "private": bool(found["private"]), "created_at": found["created_at"],
+                "kind": "pull_request" if "/pull/" in found["html_url"] else "repository"}
 
     def detail(record: RunRecord) -> dict:
         run = engine.load(record.id)
         view = projector.run_detail(run, record, platform.jobs(record.id), engine.events(record.id),
                                     project_name(record.project_id), delivery_view(record.id))
         view["publication"] = publication_view(record.id)
+        earlier = platform.project_publication(record.project_id, exclude_run=record.id)
+        view["project_publication"] = ({"repository": earlier["repo_full_name"], "private": bool(earlier["private"]),
+                                        "commit": earlier["commit_sha"]} if earlier else None)
         view["instructions"] = [{key: item[key] for key in ("id", "text", "created_at")}
                                 for item in platform.instructions(record.id)]
         view["questions"] = pending_questions(record, run)
@@ -891,7 +898,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         from .publish import REPO_NAME, GitHubClient, PublishError, push
 
         record = owned_run(user, run_id)
-        if not REPO_NAME.fullmatch(body.name) or body.name.strip(".") == "":
+        if body.mode == "new_repository" and (not REPO_NAME.fullmatch(body.name) or body.name.strip(".") == ""):
             raise HTTPException(422, "Repository names use letters, digits, '.', '-' and '_' only.")
         if platform.publication(record.id) is not None:
             raise HTTPException(409, "This run was already published.")
@@ -901,6 +908,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if run.status != "completed" or not commit:
             raise HTTPException(409, "Only a completed run with a verified, integrated project can be published.")
         client = GitHubClient(body.github_token, settings.github_api_url)
+        if body.mode == "pull_request":
+            return open_pull_request(record, run, commit, client, body.github_token, user)
         try:
             created = client.create_repository(body.name, body.private,
                                                f"{project_name(record.project_id)} - built with Cavman")
@@ -908,6 +917,38 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except PublishError as exc:
             raise HTTPException(exc.status, engine.redact(str(exc))) from None
         platform.save_publication(record.id, user, created["full_name"], created["html_url"], commit, body.private)
+        return {"publication": publication_view(record.id)}
+
+    def open_pull_request(record: RunRecord, run, commit: str, client, token: str, user: str) -> dict:
+        """Push this build's verified commit to a new branch of the project's
+        repository and open a pull request. Only allowed when the commit builds
+        on what was published, so the pull request holds just this build's work."""
+        from .publish import PublishError, push
+
+        earlier = platform.project_publication(record.project_id, exclude_run=record.id)
+        if earlier is None:
+            raise HTTPException(409, "Publish this project to a new repository first. Later builds can then "
+                                     "open pull requests on it.")
+        repo = engine.project_repo(record.project_id)
+        ancestry = subprocess.run(["/usr/bin/git", "-C", str(repo), "merge-base", "--is-ancestor",
+                                   earlier["commit_sha"], commit], capture_output=True, timeout=30)
+        if ancestry.returncode != 0:
+            raise HTTPException(409, "This build does not continue from the published code, so it cannot be "
+                                     "opened as a pull request. Publish it as a new repository instead.")
+        branch = f"cavman/{record.id[:12]}"
+        try:
+            target = client.repository(earlier["repo_full_name"])
+            push(repo, commit, target["clone_url"], token, ref=f"refs/heads/{branch}")
+            opened = client.create_pull_request(
+                target["full_name"], head=branch, base=target["default_branch"],
+                title=f"{project_name(record.project_id)}: {record.prompt.strip().splitlines()[0][:120]}",
+                body=(f"Built and verified by Cavman. Every task passed its checks in the sandbox and an "
+                      f"independent review before it was accepted.\n\nRequest: {record.prompt.strip()[:1500]}\n\n"
+                      f"Result: {(run.final_result or '').strip()[:1500]}"))
+        except PublishError as exc:
+            raise HTTPException(exc.status, engine.redact(str(exc))) from None
+        platform.save_publication(record.id, user, target["full_name"], opened["html_url"], commit,
+                                  target["private"])
         return {"publication": publication_view(record.id)}
 
     @app.get("/api/runs/{run_id}/delivery/download")

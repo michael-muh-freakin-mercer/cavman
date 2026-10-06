@@ -754,6 +754,13 @@ class PlatformStore:
         rows = self._query("SELECT * FROM publications WHERE run_id=?", (run_id,))
         return dict(rows[0]) if rows else None
 
+    def project_publication(self, project_id: str, exclude_run: str | None = None) -> dict | None:
+        """The repository an earlier build of this project was published to, newest first."""
+        rows = self._query("SELECT p.* FROM publications p JOIN runs r ON r.id = p.run_id "
+                           "WHERE r.project_id=? AND p.run_id <> ? ORDER BY p.created_at DESC LIMIT 1",
+                           (project_id, exclude_run or ""))
+        return dict(rows[0]) if rows else None
+
     def save_publication(self, run_id: str, owner_id: str, repo_full_name: str, html_url: str,
                          commit_sha: str, private: bool) -> dict:
         with self._write() as db:

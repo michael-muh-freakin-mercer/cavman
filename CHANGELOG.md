@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-02 — Later builds open pull requests
+
+- Once a project has been published to GitHub, a later build in that project can open a pull request on that repository instead of creating another one. Cavman pushes the build's verified commit to a new `cavman/<run>` branch, never forced, and opens a pull request against the default branch, with the request and result in its description. The default branch changes only if the user merges it.
+- It is refused unless the build's commit continues from the published one, so the pull request holds only that build's work. Publishing to a new repository is still offered.
+- The run page shows "Open a pull request" for such builds, and "View Pull Request" afterwards. The API takes `mode: "pull_request"` on `/api/runs/{id}/publish`, and the run detail has `project_publication`.
+
 ## 2026-10-01 — The finished project is checked as a whole
 
 - Each task's reviewer rules only on the success criteria that task alone covers. A criterion several tasks share was never checked anywhere. Now, once every task is accepted and integrated, and before the run completes, the project's own checks (pytest, compile, node:test, tsc, whichever its tasks used) run together on the integrated code, and a fresh reviewer reads that code and rules on each shared criterion. A failed check, an unmet or unruled criterion, a high or critical finding, or a reviewer who read no file fails the review, whatever the reviewer claimed.

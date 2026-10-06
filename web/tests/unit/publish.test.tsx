@@ -33,6 +33,29 @@ describe("PublishPanel", () => {
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ name: "booking-app", private: false, confirm: true });
   });
 
+  it("offers a pull request on the repository an earlier build created", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ publication: {} }), { status: 201 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const onPublished = vi.fn().mockResolvedValue(undefined);
+    const run = runDetail({ delivery, project_publication: { repository: "alice/booking", private: true, commit: "1".repeat(40) } });
+    render(<PublishPanel run={run} onPublished={onPublished} />);
+    await userEvent.click(screen.getByRole("button", { name: /Open a pull request/ }));
+    expect(screen.getByText("alice/booking")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Repository name")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Push branch and open pull request" }));
+    await waitFor(() => expect(onPublished).toHaveBeenCalled());
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ mode: "pull_request", private: true, confirm: true });
+  });
+
+  it("can still publish a follow-up build to a new repository", async () => {
+    const run = runDetail({ delivery, project_publication: { repository: "alice/booking", private: true, commit: "1".repeat(40) } });
+    render(<PublishPanel run={run} onPublished={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: /Open a pull request/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Publish to a new repository instead" }));
+    expect(screen.getByLabelText("Repository name")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create repository and push" })).toBeInTheDocument();
+  });
+
   it("asks for exactly the missing GitHub scope instead of publishing", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
       JSON.stringify({ detail: "GitHub access is needed to create the repository.", needs_scope: "repo" }), { status: 409 })));

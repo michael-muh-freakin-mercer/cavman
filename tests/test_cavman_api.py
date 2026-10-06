@@ -1013,6 +1013,86 @@ def test_estimate_endpoint_returns_ceiling_and_allowance(client):
 
 
 @needs_sandbox
+def test_a_follow_up_build_opens_a_pull_request_on_the_published_repository(client, settings, tmp_path, monkeypatch):
+    import subprocess
+    from cavman import publish as publish_module
+
+    token = "gho_" + "p" * 36
+    remote = tmp_path / "booking.git"
+    pulls = []
+
+    def create_repository(self, name, private, description):
+        subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
+        return {"full_name": f"alice/{name}", "html_url": f"https://github.com/alice/{name}",
+                "clone_url": str(remote)}
+
+    def repository(self, full_name):
+        assert self._token == token and full_name == "alice/booking"
+        return {"full_name": full_name, "clone_url": str(remote), "default_branch": "main", "private": True}
+
+    def create_pull_request(self, full_name, head, base, title, body):
+        pulls.append({"full_name": full_name, "head": head, "base": base, "title": title, "body": body})
+        return {"html_url": f"https://github.com/{full_name}/pull/{len(pulls)}", "number": len(pulls)}
+
+    monkeypatch.setattr(publish_module.GitHubClient, "create_repository", create_repository)
+    monkeypatch.setattr(publish_module.GitHubClient, "repository", repository)
+    monkeypatch.setattr(publish_module.GitHubClient, "create_pull_request", create_pull_request)
+    pr_body = {"mode": "pull_request", "confirm": True, "github_token": token}
+
+    first = build(client, prompt="Build me a booking app for a tattoo studio")
+    drain(settings)
+    nothing_yet = client.post(f"/api/runs/{first['run_id']}/publish", json=pr_body, headers=ALICE)
+    assert nothing_yet.status_code == 409 and "new repository first" in nothing_yet.json()["detail"]
+    published = client.post(f"/api/runs/{first['run_id']}/publish", headers=ALICE,
+                            json={"name": "booking", "private": True, "confirm": True, "github_token": token})
+    assert published.status_code == 201, published.text
+
+    second = build(client, prompt="Add cancellation to the booking app #follow-up", project_id=first["project_id"])
+    drain(settings)
+    detail = client.get(f"/api/runs/{second['run_id']}", headers=ALICE).json()
+    assert detail["state"] == "complete"
+    assert detail["project_publication"]["repository"] == "alice/booking"
+    opened = client.post(f"/api/runs/{second['run_id']}/publish", json=pr_body, headers=ALICE)
+    assert opened.status_code == 201, opened.text
+    publication = opened.json()["publication"]
+    assert publication["kind"] == "pull_request" and publication["url"] == "https://github.com/alice/booking/pull/1"
+    [pull] = pulls
+    branch = f"cavman/{second['run_id'][:12]}"
+    assert pull["head"] == branch and pull["base"] == "main" and "Add cancellation" in pull["title"]
+    pushed = subprocess.run(["git", "-C", str(remote), "rev-parse", branch], capture_output=True, text=True)
+    assert pushed.stdout.strip() == detail["delivery"]["commit"]
+    main = subprocess.run(["git", "-C", str(remote), "rev-parse", "main"], capture_output=True, text=True)
+    assert main.stdout.strip() == published.json()["publication"]["commit"]  # main untouched
+    files = subprocess.run(["git", "-C", str(remote), "ls-tree", "-r", "--name-only", branch],
+                           capture_output=True, text=True).stdout.split()
+    assert "cancel.py" in files
+    assert client.post(f"/api/runs/{second['run_id']}/publish", json=pr_body, headers=ALICE).status_code == 409
+    assert token not in json.dumps(client.get(f"/api/runs/{second['run_id']}", headers=ALICE).json())
+
+
+@needs_sandbox
+def test_a_pull_request_must_build_on_the_published_code(client, settings, tmp_path, monkeypatch):
+    import subprocess
+    from cavman import publish as publish_module
+
+    remote = tmp_path / "r.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
+    monkeypatch.setattr(publish_module.GitHubClient, "create_repository", lambda self, name, private, d: {
+        "full_name": f"alice/{name}", "html_url": f"https://github.com/alice/{name}", "clone_url": str(remote)})
+    token = "gho_" + "q" * 36
+    first = build(client, prompt="Build me a booking app for a tattoo studio")
+    drain(settings)
+    second = build(client, prompt="Add cancellation to the booking app #follow-up", project_id=first["project_id"])
+    drain(settings)
+    # The newer build is published as the repository; the older one does not build on it.
+    assert client.post(f"/api/runs/{second['run_id']}/publish", headers=ALICE, json={
+        "name": "r", "private": True, "confirm": True, "github_token": token}).status_code == 201
+    refused = client.post(f"/api/runs/{first['run_id']}/publish", headers=ALICE,
+                          json={"mode": "pull_request", "confirm": True, "github_token": token})
+    assert refused.status_code == 409 and "does not continue from the published code" in refused.json()["detail"]
+
+
+@needs_sandbox
 def test_a_criterion_tasks_share_is_checked_on_the_finished_project(client, settings):
     run_id = build(client, prompt="Booking core with reminders #shared")["run_id"]
     drain(settings)

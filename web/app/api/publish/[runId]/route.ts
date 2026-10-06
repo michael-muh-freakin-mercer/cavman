@@ -26,7 +26,7 @@ export async function POST(request: Request, context: { params: Promise<{ runId:
   const session = await auth.api.getSession({ headers: requestHeaders });
   if (!session) return NextResponse.json({ detail: "Sign in to continue." }, { status: 401 });
 
-  let body: { name?: unknown; private?: unknown; confirm?: unknown };
+  let body: { name?: unknown; private?: unknown; confirm?: unknown; mode?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -56,7 +56,10 @@ export async function POST(request: Request, context: { params: Promise<{ runId:
     upstream = await fetch(`${apiBase()}/api/runs/${runId}/publish`, {
       method: "POST",
       headers: { ...serviceHeaders(session.user.id), "Content-Type": "application/json" },
-      body: JSON.stringify({ name: body.name, private: isPrivate, confirm: body.confirm === true, github_token: token }),
+      body: JSON.stringify({
+        mode: body.mode === "pull_request" ? "pull_request" : "new_repository",
+        name: body.name, private: isPrivate, confirm: body.confirm === true, github_token: token,
+      }),
       cache: "no-store",
     });
   } catch {

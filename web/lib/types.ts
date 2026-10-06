@@ -275,7 +275,9 @@ export interface RunDetail extends RunSummary {
   timeline: TimelineEvent[];
   final_result: string | null;
   delivery: DeliveryView | null;
-  publication?: { repository: string; url: string; commit: string; private: boolean; created_at: string } | null;
+  publication?: { repository: string; url: string; commit: string; private: boolean; created_at: string; kind?: "repository" | "pull_request" } | null;
+  // The repository an earlier build of this project was published to; a pull request can go there.
+  project_publication?: { repository: string; private: boolean; commit: string } | null;
 }
 
 export interface ProjectSource {
