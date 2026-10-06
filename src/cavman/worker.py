@@ -1,7 +1,7 @@
 """Durable run execution, decoupled from any HTTP request or browser connection.
 
 A worker claims one queued job at a time under a lease, heartbeats while the
-Manager runs, and records a plain outcome when it stops. Closing the browser
+workflow driver runs, and records a plain outcome when it stops. Closing the browser
 does nothing to a run; killing the worker leaves an expired lease that the next
 worker converts into an explicit recovery job.
 """
@@ -31,27 +31,10 @@ logger = logging.getLogger("cavman.worker")
 
 MAX_DETAIL_CHARS = 4000
 
-MESSAGES = {
-    "continue": ("Continue this durable run from its persisted state. Inspect it first. Human decisions "
-                 "on approvals may have changed since your last turn."),
-    "recover": ("Continue this durable run after an interruption. Inspect it first; interrupted "
-                "assignments were recorded as failed with TIMEOUT evidence and need an explicit "
-                "recovery decision."),
-}
-
-
 PLATFORM_NOTES = ("Executable sandbox checks support Python (compile, pytest, pytest_regression) and "
                   "Node/TypeScript (node_test with node:test test files; tsc with a tsconfig.json and "
                   "typescript dependency; npm_build runs the project's own npm run build). Deliver other stacks as reviewed documents or source files, "
                   "and say so honestly in the final result.")
-
-
-def build_objective_message(prompt: str, constraints: list[str]) -> str:
-    lines = [prompt.strip()]
-    if constraints:
-        lines += ["", "Constraints from the user:"] + [f"- {c}" for c in constraints]
-    lines += ["", "Cavman platform notes: " + PLATFORM_NOTES]
-    return "\n".join(lines)
 
 
 def _merge_budget(env_budget: UsageBudget | None, budget_usd: float, max_calls: int) -> UsageBudget:
@@ -78,8 +61,7 @@ class Worker:
 
             def loader(run_id):
                 return lambda: self.engine.load(run_id)
-            self._scripted = ScriptedProvider(loader, settings.scripted_step_delay,
-                                              workflow=settings.orchestration == "workflow")
+            self._scripted = ScriptedProvider(loader, settings.scripted_step_delay)
             runtime.register_provider(PROVIDER, self._scripted)
 
     def close(self) -> None:
@@ -89,9 +71,8 @@ class Worker:
         self._stopping.set()
 
     async def run_forever(self, poll_seconds: float = 1.0) -> None:
-        logger.info("Cavman worker %s started (executor: %s, orchestration: %s, concurrency: %s)",
-                    self.worker_id, self.settings.executor, self.settings.orchestration,
-                    self.settings.worker_concurrency)
+        logger.info("Cavman worker %s started (executor: %s, concurrency: %s)",
+                    self.worker_id, self.settings.executor, self.settings.worker_concurrency)
         await asyncio.gather(*(self._slot(poll_seconds) for _ in range(self.settings.worker_concurrency)))
 
     async def _slot(self, poll_seconds: float) -> None:
@@ -173,9 +154,7 @@ class Worker:
             self.platform.finish(job.id, self.worker_id, "failed", "config_error",
                                  self.engine.redact(str(exc), MAX_DETAIL_CHARS))
             return
-        message = job.message or (build_objective_message(record.prompt, run.constraints)
-                                  if job.kind == "start" else MESSAGES[job.kind])
-        status, outcome, detail = await self._drive(job, record.project_id, config, message)
+        status, outcome, detail = await self._drive(job, record.project_id, config)
         if scripted_key:
             self._scripted.release(scripted_key)
         if outcome == "cancelled" or outcome == "interrupted":
@@ -188,32 +167,21 @@ class Worker:
         self.platform.finish(job.id, self.worker_id, status, outcome, detail)
         self.deliver_if_complete(job.run_id)
 
-    async def _drive(self, job: Job, project_id: str, config, message: str) -> tuple[str, str, str]:
-        from agents import RunConfig, Runner, SQLiteSession
-        from agents.exceptions import MaxTurnsExceeded
-
-        from .config import ORCHESTRATION_WORKFLOW
+    async def _drive(self, job: Job, project_id: str, config) -> tuple[str, str, str]:
         from .workflow import WorkflowDriver
 
         store = self.settings.open_operations_store()
-        session = SQLiteSession(job.run_id, str(self.settings.sessions_db))
         cancelled_by_user = False
         try:
             controller = DurableController(Orchestrator(store), job.run_id,
                                            WorkspaceManager(self.engine.project_repo(project_id),
                                                             backend=self.execution_backend),
                                            config=config, integration=True, salvage_exhausted=True)
-            if self.settings.orchestration == ORCHESTRATION_WORKFLOW:
-                driver = WorkflowDriver(
-                    controller, platform_notes=PLATFORM_NOTES,
-                    load_state=lambda: self.platform.workflow_state(job.run_id),
-                    save_state=lambda state: self.platform.save_workflow_state(job.run_id, state))
-                task = asyncio.create_task(driver.run())
-            else:
-                agent = runtime.build_walter(controller)
-                task = asyncio.create_task(Runner.run(
-                    agent, message, session=session, max_turns=self.settings.manager_max_turns,
-                    run_config=RunConfig(trace_include_sensitive_data=False)))
+            driver = WorkflowDriver(
+                controller, platform_notes=PLATFORM_NOTES,
+                load_state=lambda: self.platform.workflow_state(job.run_id),
+                save_state=lambda state: self.platform.save_workflow_state(job.run_id, state))
+            task = asyncio.create_task(driver.run())
             while not task.done():
                 done, _ = await asyncio.wait({task}, timeout=self.settings.heartbeat_seconds)
                 if done:
@@ -232,18 +200,12 @@ class Worker:
             return "succeeded", "succeeded", self.engine.redact(output, MAX_DETAIL_CHARS)
         except UsageBudgetExceeded as exc:
             return "failed", "budget_exceeded", self.engine.redact(str(exc), MAX_DETAIL_CHARS)
-        except MaxTurnsExceeded:
-            return "failed", "turn_limit", "The Manager used its turn allowance for this session."
         except runtime.RuntimeConfigurationError as exc:
             return "failed", "config_error", self.engine.redact(str(exc), MAX_DETAIL_CHARS)
         except Exception as exc:
             logger.exception("Job %s failed", job.id)
             return "failed", "error", self.engine.redact(f"{type(exc).__name__}: {exc}", MAX_DETAIL_CHARS)
         finally:
-            try:
-                session.close()
-            except Exception:
-                pass
             store.close()
 
     def deliver_if_complete(self, run_id: str) -> None:

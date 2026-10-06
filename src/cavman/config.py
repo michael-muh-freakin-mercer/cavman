@@ -16,7 +16,6 @@ from pathlib import Path
 from .legacy import is_legacy, prefer_existing, with_legacy_names
 
 ORCHESTRATION_WORKFLOW = "workflow"
-ORCHESTRATION_MANAGER = "manager"
 
 EXECUTOR_PROVIDER = "provider"
 EXECUTOR_SCRIPTED = "scripted"
@@ -81,9 +80,6 @@ class Settings:
     api_token: str
     environment: str = "development"
     executor: str = EXECUTOR_PROVIDER
-    # workflow: plain code drives plan/delegate/validate/review/accept; models
-    # plan, work and review. manager: the Manager model drives every step.
-    orchestration: str = ORCHESTRATION_WORKFLOW
     # Spending is bounded by default: every run gets a USD ceiling (enforced on
     # provider-reported cost) and a model-call ceiling (which also bounds calls
     # whose cost the provider did not report).
@@ -94,7 +90,6 @@ class Settings:
     account_monthly_budget_usd: float = 25.0
     account_monthly_max_calls: int = 3000
     budget_warning_ratio: float = 0.8
-    manager_max_turns: int = 60
     # Steps (model replies) per specialist attempt. Live runs showed capable
     # specialists reaching green checks around step 24.
     specialist_max_turns: int = 40
@@ -199,10 +194,12 @@ class Settings:
                 "The scripted test executor drives runs with scripted models and is refused "
                 "when CAVMAN_ENV=production.")
         orchestration = values.get("CAVMAN_ORCHESTRATION", ORCHESTRATION_WORKFLOW).strip().lower()
-        if orchestration not in {ORCHESTRATION_WORKFLOW, ORCHESTRATION_MANAGER}:
+        if orchestration != ORCHESTRATION_WORKFLOW:
+            # Manager mode (a Manager model driving every step) was retired on 2026-10-02.
             raise SettingsError(
-                f"CAVMAN_ORCHESTRATION must be '{ORCHESTRATION_WORKFLOW}' or '{ORCHESTRATION_MANAGER}'; "
-                f"got {orchestration!r}.")
+                f"CAVMAN_ORCHESTRATION={orchestration!r} is no longer supported: manager mode was retired "
+                f"and every build runs the workflow driver. Remove the setting or set it to "
+                f"'{ORCHESTRATION_WORKFLOW}'.")
         sandbox_backend = (values.get("CAVMAN_SANDBOX_BACKEND") or SANDBOX_BUBBLEWRAP).strip().lower()
         if sandbox_backend not in {SANDBOX_BUBBLEWRAP, SANDBOX_E2B}:
             raise SettingsError(
@@ -227,7 +224,6 @@ class Settings:
             api_token=token,
             environment=environment,
             executor=executor,
-            orchestration=orchestration,
             model_profiles=_profiles(values),
             database_url=database_url,
             database_schema=database_schema,
@@ -247,7 +243,6 @@ class Settings:
             default_max_model_calls=_int(values, "CAVMAN_DEFAULT_MAX_MODEL_CALLS", 300),
             account_monthly_budget_usd=_float(values, "CAVMAN_ACCOUNT_MONTHLY_BUDGET_USD", 25.0, minimum=0.01),
             account_monthly_max_calls=_int(values, "CAVMAN_ACCOUNT_MONTHLY_MAX_CALLS", 3000),
-            manager_max_turns=_int(values, "CAVMAN_MANAGER_MAX_TURNS", 60),
             specialist_max_turns=_int(values, "CAVMAN_SPECIALIST_MAX_TURNS", 40),
             worker_concurrency=_int(values, "CAVMAN_WORKER_CONCURRENCY", 1),
             lease_seconds=_float(values, "CAVMAN_LEASE_SECONDS", 90.0, minimum=5.0),
