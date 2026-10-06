@@ -24,9 +24,10 @@ class GateError(ValueError):
 # named forms exist so a task can require the candidate's own tests, the
 # pre-existing suite, or both (2026-09-21 decision).
 # node_test runs the candidate's Node test files (node:test, TypeScript via type
-# stripping); tsc type-checks the project with its own typescript dependency.
+# stripping); tsc type-checks the project with its own typescript dependency;
+# npm_build runs the project's own `npm run build`.
 EXECUTABLE_DEVELOPER_CHECKS = frozenset(
-    {"compile", "pytest", "pytest_candidate", "pytest_regression", "node_test", "tsc"})
+    {"compile", "pytest", "pytest_candidate", "pytest_regression", "node_test", "tsc", "npm_build"})
 
 # Bounded retries for append-only usage accounting when another process commits
 # to the same run between this load and save.

@@ -11,6 +11,89 @@
 - The workflow driver reads them at the start of every round. Specialists starting work from then on get them in their instructions, newest winning over the task packet where they conflict. Reviewers get them as `owner_instructions` and fail work that ignores one that applies. Work already accepted is not redone; a follow-up run is the way to change it.
 - New `POST /api/runs/{id}/instructions`. Manager mode keeps its own path (the message goes to the Manager on Continue).
 
+## 2026-10-02 — The site speaks to developers
+
+- Link previews and the browser tab now say "Cavman — AI builds that have to prove they work", with a description naming who it is for (developers) and what it does best (Python and TypeScript libraries, CLIs and API cores, handed over after real tests and a second review). The dig-site joke stays in the landing page's headline.
+- The last web-app examples are gone: the How it works flow and the landing page's example run now show a Python CLI that renames photos by date, with Python, TypeScript, API, test and docs specialists, and the new-build placeholder models a good, testable request.
+
+## 2026-10-06 — Sentry 11
+
+- `@sentry/nextjs` 10 → 11. Sentry 11 drops `sendDefaultPii` and collects every kind of data by default, now including local variable values in stack frames. The web server turns each category off in `dataCollection` (user, cookies, bodies, query strings, response headers, stack-frame variables and the rest) and keeps only the request headers `scrubEvent` already kept, so reports carry no more than before.
+
+## 2026-10-02 — Manager mode is retired
+
+- Every build now runs the workflow driver, where plain code drives plan, delegate, validate, review and accept, and models only plan, build and review. The original mode, where a Manager model drove each step through tool calls, used far more model calls and was never used on cavman.dev. It is gone, along with its scripted test models, the `--orchestration` flag of the live campaign, `CAVMAN_MANAGER_MAX_TURNS`, and the per-run conversation sessions it kept in local SQLite.
+- `CAVMAN_ORCHESTRATION=manager` now stops the API and worker at startup with a message saying so, instead of quietly running something different. `workflow` is still accepted.
+- Runs and the system view no longer report an `orchestration` field. The Continue dialog no longer has an instruction box. It only appeared in manager mode.
+- Erasing an account still deletes any old manager-mode sessions for its runs.
+
+## 2026-10-06 — source-map-js 1.2.2
+
+- `source-map-js` 1.2.1 → 1.2.2 in the web lockfile for GHSA-68fv-2mgg-jv7q (high: event-loop denial of service from crafted source maps). The advisory appeared after 2026-10-05 and failed `npm audit` in CI on every branch.
+
+## 2026-10-02 — Start from a private GitHub repository
+
+- A new project can start from a private GitHub repository the user can read. The web server reads the user's own GitHub token from the encrypted auth store, only when the account has granted the `repo` scope and the request names a repository. It sends the token to the API in an `X-Cavman-GitHub-Token` header the browser cannot set. The importer uses it for GitHub's metadata and the download, and never stores or logs it.
+- The operator's import token (`CAVMAN_GITHUB_IMPORT_TOKEN`) still only raises rate limits: a private repository is refused unless the importing user's own token is present.
+- When a repository is private, or not found without a token, the API answers with `needs_scope: "repo"`. The New build form then offers "Give Cavman access to your GitHub repositories" and, after GitHub, returns to the form with the request and repository filled in. The project records whether its source was private.
+
+## 2026-10-01 — Accessibility, phones, Firefox and Safari
+
+- New end-to-end checks (`web/e2e/quality.spec.ts`): every public page, every signed-in page, a run waiting for approval and a completed run are scanned with axe-core for WCAG 2.1 A and AA, and must be no wider than the screen.
+- The same checks and the core journeys (`web/e2e/cross-browser.spec.ts`: sign up, build, follow it live, decide an approval, download) run in Chromium, Firefox, WebKit (Safari's engine) and at Pixel 7 and iPhone 14 sizes. The full journey set stays on Chromium; the Compose deployment job runs Chromium only.
+- WebKit (Safari's engine) could not sign in on the plain-HTTP test stack: the production CSP's `upgrade-insecure-requests` made it send the page's own requests to `https://localhost`, which Chromium and Firefox exempt but WebKit does not. The directive is now sent only when the page came over HTTPS, directly or through Caddy's `X-Forwarded-Proto`, which is always the case on cavman.dev.
+- Fixed what the scan found: the "ok" green (`#16803f` to `#126b34`) and the faint grey (`#6f7369` to `#5f625a`) now reach 4.5:1 on their backgrounds, the docs link to the setup guide is underlined, not just coloured, and the run's activity list can be scrolled from the keyboard.
+
+## 2026-10-02 — Reviewers must read the work, and are asked again if they do not
+
+- Live smokes showed the same request costing $0.03 in one build and $0.65 in another. In one case both reviewers ruled every item met, and the work was sent back anyway, because they had judged from the diff in their input without opening a file. Trusted code fails such a review, but it said so only in the evidence. The specialist got a reason saying everything was fine and spent 79 calls redoing working code.
+- Reviewers are now told to open the candidate's files before ruling. One that reads nothing is asked once more. If it still reads nothing, the review fails with a reason that says the verdict was discarded for that reason.
+- Findings and the model comparison are in `docs/live-campaign/README.md`.
+- The real-github.com import check sends the workflow's own token, so parallel CI runs no longer share GitHub's anonymous rate limit.
+
+## 2026-10-01 — Change your email, and optional two-factor sign-in
+
+- Settings > Account can change the account's email. A verified address must approve the change by a link sent to it first, then the new address confirms by its own link, so a stolen session cannot quietly move the account. An unverified address gets only the second link.
+- Settings > Two-factor sign-in turns on a code from an authenticator app (Better Auth's two-factor plugin): scan a QR code or type the key, confirm with a code, and save ten single-use backup codes. Signing in with a password then asks for a code or a backup code, with an option to trust the device for 30 days. New backup codes and turning it off need the password. The TOTP secret and the backup codes are stored encrypted. GitHub sign-in is not gated; it relies on GitHub's own two-factor.
+- The plugin adds a `twoFactor` table and a `twoFactorEnabled` user column through the automatic auth migration. The privacy policy mentions the encrypted key and codes.
+- New dependency: `uqr` (MIT, no dependencies) draws the QR code as an SVG in the browser.
+
+## 2026-10-01 — Paged run and project lists, streamed export
+
+- `GET /api/runs`, `GET /api/projects` and `GET /api/projects/{id}` return one page, newest first (`limit`, 1 to 100), with a `next` cursor for the page after it (`before=`). Paging is by (created, id), so builds started while someone pages do not shift or repeat items. A project still reports its full `run_count` and its latest run on every page.
+- The Runs, Projects and project pages show 25 runs or 24 projects with Older and Newest links. The overview reads the newest 50 runs instead of all of them.
+- Projects no longer load every run to count them: one count query and the latest run.
+- The account export streams one run at a time from the API through the web server, so a large account is never built in memory. The file's content is unchanged.
+
+## 2026-10-01 — First-run guidance and a FAQ
+
+- A new account's overview shows how a build goes in four steps (describe it, watch it work, decide when asked, take it away), with links to the docs and the questions.
+- The docs page has a Questions section: what Cavman builds well, cost, the monthly allowance, why a build waits, running the result, privacy and self-hosting, plus the support address.
+- The docs now cover starting from a public GitHub repository, asking for changes, and publishing to GitHub, and no longer say publishing "is not wired yet".
+
+## 2026-10-02 — Load test
+
+- `scripts/load_test.py` drives the real API and worker processes with many accounts' builds and live-update connections at once, using scripted models, so it costs nothing. 100 concurrent builds with 500 open streams all completed, with no stream errors and an API p95 of 240 ms. Results and what they mean for cavman.dev are in `docs/LOAD_TEST.md`: the single worker slot, not the platform, is the limit.
+
+## 2026-10-02 — Repository import proven against github.com
+
+- `tests/test_github_live.py` (opt-in with `CAVMAN_LIVE_GITHUB=1`) imports GitHub's public example repository through the API, the way a user's build does, and checks the result: one local commit, no upstream remote or shallow state. It also checks that a missing or private repository is refused by the real API. An advisory CI job runs it on every push. It cannot fail the build, so a GitHub outage does not block merges.
+
+## 2026-10-01 — Rehearse the move to Ubuntu 26.04 runners
+
+- An advisory CI job runs the backend suite on `ubuntu-26.04`, which has Python 3.14 as its system interpreter, the one the sandbox uses. The job cannot fail the build and is not a required check. `docs/runbooks/ci-runner-move.md` lists what depends on the runner image and the steps to move.
+
+## 2026-10-01 — Builds prove the project's own build script
+
+- New trusted check `npm_build` runs the project's `npm run build` in the same network-denied jail as the Node tests, with dependencies from the isolated installer. The workspace stays read-only: the sources are copied to scratch, `node_modules` is linked in read-only, and the output is thrown away. Pre- and post-build hooks are not run.
+- The planner is told to require it when `package.json` has a `build` script, so a bundler or framework build that fails no longer passes because the tests did. Specialists can run it with `run_check("npm_build")`. A task with no `build` script fails the check with a plain reason.
+- Limits: two minutes, the usual Node memory cap and 32 MB of scratch. Dev servers are still not run.
+
+## 2026-10-01 — Campaign reports say why work was sent back
+
+- A live campaign report now lists every failed check and every review that asked for changes, in order, with the reviewer's reason, plus the number of candidates and the cost by role (planner, specialist, reviewer) for each build. The 2026-09-30 smoke showed review had made builds dearer but recorded nothing about why revisions were requested.
+- The report is rewritten after every build, marked partial until the campaign ends, and `--deadline-minutes` stops new builds from starting late. The live smoke uses 70 minutes against its 90-minute job timeout. A smoke on 2026-10-02 hit that timeout and left no report, although it had spent money.
+
 ## 2026-09-30 — Worker containers keep Docker's seccomp filter
 
 - `deploy/compose.yaml` ran Bubblewrap workers with `seccomp=unconfined`, which switched off the container's whole system-call filter to let Bubblewrap create a user namespace. They now run under `deploy/seccomp-worker.json`: Docker's default profile plus the six calls Bubblewrap needs (`clone`, `unshare`, `mount`, `umount2`, `pivot_root`, `sethostname`). Everything else the default denies stays denied.
@@ -254,7 +337,6 @@
 - Core (additive): provider-reported USD spend ceiling in `UsageBudget` (`WALTER_MAX_COST_USD`), a provider registry seam in `runtime.build_models`, and `build_walter` honoring a per-run controller configuration.
 - Added `web/`: Next.js marketing site, Better Auth sign-in, authenticated same-origin API proxy, and the live run dashboard; Vitest and Playwright journeys; CI jobs for both.
 - Workers refuse to start when Bubblewrap isolation is unusable.
-
 
 ## Unreleased — 2026-09-27
 

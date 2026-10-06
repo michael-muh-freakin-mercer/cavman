@@ -23,6 +23,7 @@ CHECK_LABELS = {
     "pytest_regression": "Regression tests",
     "node_test": "Node tests",
     "tsc": "TypeScript typecheck",
+    "npm_build": "Project build",
 }
 
 FAILURE_EXPLANATIONS = {
@@ -646,7 +647,6 @@ class Projector:
             "project_name": project_name,
             "prompt": self.redact(record.prompt, limit=4000),
             "executor": record.executor,
-            "orchestration": self.settings.orchestration,
             "model_mode": record.model_mode,
             "status": run.status,
             **self.run_state(run, jobs),

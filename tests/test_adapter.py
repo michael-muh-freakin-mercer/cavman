@@ -870,16 +870,48 @@ def test_developer_lane_review_still_requires_candidate_inspection(tmp_path, mon
     asyncio.run(controller.delegate("task"))
     controller.validate("task")
 
+    attempts = []
+
     async def uninspected(**kwargs):
+        attempts.append(kwargs["instructions"])
         return ReviewResult(passed=True, evidence=["looks fine"], reason="no files read",
                             verdicts=fakes.verdicts(kwargs["input"]))
 
     monkeypatch.setattr(controller, "_invoke", uninspected)
-    asyncio.run(controller.review("task"))
+    report = asyncio.run(controller.review("task"))
     state = controller.inspect()
     review = state.artifacts[state.tasks["task"].artifact_ids[-1]].reviews[-1]
     assert not review.passed
-    assert "did not inspect any candidate file" in review.evidence
+    assert "did not open any candidate file" in review.evidence
+    # Asked once more before the verdict is discarded, and the reason says why.
+    assert len(attempts) == 2 and "rejected because you read no file" in attempts[1]
+    assert report.reason.startswith("The reviewer did not open any candidate file")
+
+
+def test_a_reviewer_that_reads_on_its_second_attempt_is_accepted(tmp_path, monkeypatch):
+    controller, _ = _developer_pytest_controller(tmp_path)
+
+    async def candidate(**kwargs):
+        _write_candidate(controller)
+        return WorkerResult(task_id="task", status="completed", summary="candidate",
+                            deliverable="bounded candidate")
+
+    monkeypatch.setattr(controller, "_invoke", candidate)
+    asyncio.run(controller.delegate("task"))
+    controller.validate("task")
+    attempts = []
+
+    async def reads_when_told(**kwargs):
+        attempts.append(1)
+        if len(attempts) == 2:
+            read_file = next(t for t in kwargs["tools"] if t.name == "read_file")
+            await _call_tool(read_file, path="test_candidate.py")
+        return ReviewResult(passed=True, evidence=["read test_candidate.py"], reason="met",
+                            verdicts=fakes.verdicts(kwargs["input"]))
+
+    monkeypatch.setattr(controller, "_invoke", reads_when_told)
+    assert asyncio.run(controller.review("task")).passed
+    assert len(attempts) == 2
 
 
 def _submitted_for_review(monkeypatch, node=None):
@@ -1571,3 +1603,22 @@ def test_exhaustion_still_fails_without_salvage_or_without_work(tmp_path, monkey
         pass
     task = controller.inspect().tasks["task"]
     assert task.artifact_ids == [] and task.status != "SUBMITTED"
+
+
+def test_project_build_needs_a_build_script():
+    from walter.adapter import _build_script_problem
+
+    class Files:
+        def __init__(self, manifest):
+            self.manifest = manifest
+
+        def read_file(self, workspace_id, path, *, worker_id=None):
+            assert path == "package.json"
+            return self.manifest
+
+    assert "package.json" in _build_script_problem(Files(""), "w", "a", ["index.ts"])
+    assert "not a valid JSON" in _build_script_problem(Files("{oops"), "w", "a", ["package.json"])
+    assert "not a valid JSON" in _build_script_problem(Files("[]"), "w", "a", ["package.json"])
+    assert "no \"build\"" in _build_script_problem(Files('{"scripts": {"test": "x"}}'), "w", "a", ["package.json"])
+    assert "no \"build\"" in _build_script_problem(Files('{"scripts": {"build": " "}}'), "w", "a", ["package.json"])
+    assert _build_script_problem(Files('{"scripts": {"build": "vite build"}}'), "w", "a", ["package.json"]) is None

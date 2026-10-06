@@ -19,7 +19,7 @@
   --color-fg: #141414;
   --color-fg-soft: #2c2e29;
   --color-muted: #50534c;
-  --color-faint: #6f7369;
+  --color-faint: #5f625a; /* 4.5:1 on the stone background (WCAG AA) */
 
   /* Action: duck yellow with ink text. ember-deep is its text-safe and dot shade. */
   --color-ember: #ffd400;
@@ -29,7 +29,7 @@
   --color-glacier: #1f5fd6;
   --color-glacier-deep: #16479f;
 
-  --color-ok: #16803f;
+  --color-ok: #126b34; /* 4.5:1 or better on its own tinted pills (WCAG AA) */
   --color-bad: #c62828;
   --color-warn: #9a5b00;
   --color-review: #6d3fd1;

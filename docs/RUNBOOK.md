@@ -155,8 +155,9 @@ runs it on every push against Postgres and an S3 stand-in.
 
 If the connection drops between the stores' commits, drop the target schemas
 (`<schema>_ops`, `<schema>_platform`, and the auth tables) and run it again.
-Project repositories and archives stay where they are on the data volume;
-manager-mode conversation sessions stay in SQLite.
+Project repositories and archives stay where they are on the data volume.
+Conversation sessions from the retired manager mode stay in SQLite; nothing
+writes to them any more.
 
 ## Accounts and data
 

@@ -10,7 +10,7 @@ const SECTIONS: LegalSection[] = [
     title: "What we collect",
     body: ["Only what the service needs to work:"],
     list: [
-      "Account details: your email address, name if you give one, a hashed password, and your GitHub username and access token if you connect GitHub.",
+      "Account details: your email address, name if you give one, a hashed password, your two-factor key and backup codes (encrypted) if you turn on two-factor sign-in, and your GitHub username and access token if you connect GitHub.",
       "What you give Cavman: prompts, settings, uploaded or imported files and repositories, and your messages and approvals during a build.",
       "What Cavman makes: plans, generated code and documents, check results, reviews, delivery archives, and a record of each model call (model, tokens and cost).",
       "Sign-in records: your active sessions with the IP address and browser they came from, so you can see and revoke them in Settings.",

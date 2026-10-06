@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { AccountData } from "@/components/app/account-data";
+import { ChangeEmail } from "@/components/app/change-email";
+import { TwoFactorSettings } from "@/components/app/two-factor-settings";
 import { SecurityPanel } from "@/components/app/security-panel";
 import { ApiError } from "@/components/app/api-error";
 import { PageHeader } from "@/components/app/page-header";
@@ -22,8 +24,9 @@ const MODES: Record<string, { name: string; body: string }> = {
   quality: { name: "Maximum Quality", body: "The strongest configured models, regardless of cost." },
 };
 
-export default async function SettingsPage() {
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ email?: string }> }) {
   const user = await requireUser("/app/settings");
+  const { email: emailChange } = await searchParams;
   const requestHeaders = await headers();
   const [system, account, signIns, sessions, current] = await Promise.all([
     load<SystemView>(user.id, "system"),
@@ -47,6 +50,10 @@ export default async function SettingsPage() {
             <div><dt className="text-xs text-muted">Name</dt><dd className="text-fg">{user.name}</dd></div>
             <div><dt className="text-xs text-muted">Email</dt><dd className="text-fg">{user.email}</dd></div>
           </dl>
+          {emailChange === "changed" ? (
+            <p role="status" className="mt-3 text-sm text-ok">Your email address was changed.</p>
+          ) : null}
+          <div className="mt-4"><ChangeEmail email={user.email} verified={user.emailVerified} /></div>
         </Panel>
         <Panel title="GitHub" description="Cavman never pushes or creates repositories without your explicit approval.">
           <p className="text-sm text-fg-soft">
@@ -124,6 +131,9 @@ export default async function SettingsPage() {
         )}
         <Panel title="Security" description="Where you are signed in, and your password.">
           <SecurityPanel sessions={devices} hasPassword={hasPassword} />
+        </Panel>
+        <Panel title="Two-factor sign-in" description="A code from an authenticator app, as well as your password.">
+          <TwoFactorSettings enabled={user.twoFactorEnabled} hasPassword={hasPassword} />
         </Panel>
         <Panel title="Your data" description="Take a copy with you, or remove everything.">
           <AccountData hasPassword={hasPassword} />

@@ -21,6 +21,8 @@ const token = "e2e-service-token-0123456789abcdef0123456789";
 // Playwright only drives the browser against it.
 const external = process.env.CAVMAN_E2E_BASE_URL;
 
+const OTHER_BROWSERS = /(quality|cross-browser)\.spec\.ts$/;
+
 const shared = {
   CAVMAN_API_TOKEN: token,
   NEXT_TELEMETRY_DISABLED: "1",
@@ -39,7 +41,15 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  // Every journey runs in Chromium. Accessibility and layout checks, and the core
+  // build journey, also run in Firefox, WebKit (Safari's engine) and on phones.
+  projects: [
+    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    { name: "firefox", use: { ...devices["Desktop Firefox"] }, testMatch: OTHER_BROWSERS },
+    { name: "webkit", use: { ...devices["Desktop Safari"] }, testMatch: OTHER_BROWSERS },
+    { name: "mobile-chrome", use: { ...devices["Pixel 7"] }, testMatch: OTHER_BROWSERS },
+    { name: "mobile-safari", use: { ...devices["iPhone 14"] }, testMatch: OTHER_BROWSERS },
+  ],
   webServer: external ? [] : [
     {
       // The worker runs beside the API; both stop when the tests finish.

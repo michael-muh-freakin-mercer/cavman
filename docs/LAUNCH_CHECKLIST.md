@@ -6,7 +6,7 @@ they land and note the commit or PR.
 Owner: 🧑 needs the project owner's decision, money or approval · 🤖 engineering
 work that can be done now · 👥 needs outside people.
 
-Approvals on record: live-model campaign spend up to **$50** (OpenRouter).
+Approvals on record: live-model campaign spend up to **$50** (OpenRouter); misc budget **$50 a month** for model credit for free builds and demos, E2B and similar (2026-10-02; marketing has its own budget).
 
 ## P0: can't launch without these
 
@@ -20,7 +20,7 @@ Approvals on record: live-model campaign spend up to **$50** (OpenRouter).
 - [x] 🧑 First live build on cavman.dev (2026-09-30: a Linux secret-folder CLI, $0.35, 54 tests passing)
 - [x] 🤖 Review must check delivered work against the plan, not just tests: that first build passed every review while missing planned items (launcher shortcut not delivered, vault not hidden) and taking secrets as command-line arguments (shell history) with non-atomic saves (reviewers now rule on every plan item and report findings by severity; an unmet or unruled item or a high or critical finding fails the review)
 - [x] 🤖 Confirm the stricter review with real models (live smoke 2026-09-30: 3 of 3 builds completed, $1.00; see `docs/live-campaign/`)
-- [ ] 🤖 Measure what the stricter review costs: builds ran $0.14 to $0.67 against a $0.09 median before, and one took 33 minutes. Find out why reviewers asked for revisions and whether the requests were sound
+- [x] 🤖 Measure what the stricter review costs (2026-10-02, `docs/live-campaign/README.md`: wide variance, mostly from reviews failed for reading no file and sent back as if the work were wrong; fixed): builds ran $0.14 to $0.67 against a $0.09 median before, and one took 33 minutes. Find out why reviewers asked for revisions and whether the requests were sound
 - [ ] 🤖 Check the finished project as a whole against each success criterion shared between tasks (reviews are per task today)
 
 ### 2. Stronger isolation for untrusted code
@@ -34,7 +34,7 @@ Approvals on record: live-model campaign spend up to **$50** (OpenRouter).
 - [x] 🤖 Step-by-step DigitalOcean guide and production Compose overlay ([DEPLOY_DIGITALOCEAN.md](DEPLOY_DIGITALOCEAN.md))
 - [x] 🤖 Verify `deploy/web.Dockerfile` and `deploy/compose.yaml` end to end (`deploy/e2e.sh`, CI job `deploy`: all 15 journeys pass)
 - [x] 🤖 Verify Better Auth on Postgres (same run)
-- [ ] 🤖 Verify a multi-host deployment on Postgres (`CAVMAN_DATABASE_URL`). Two workers sharing one queue on one host pass; separate machines sharing the volume are untested
+- [x] 🧑 Single host or several: one Droplet for now (owner, 2026-10-01). Multi-host on Postgres stays unverified until a second machine is wanted; two workers sharing one queue on one host pass
 - [x] 🤖 SQLite → Postgres data migration tool (`cavman ops migrate-to-postgres`, auth included)
 - [x] 🧑 Approve the first deploy (live at https://cavman.dev on Droplet cavman-1, 2026-09-29)
 
@@ -45,7 +45,7 @@ Approvals on record: live-model campaign spend up to **$50** (OpenRouter).
 
 ### 5. Email
 - [x] 🧑 Resend account, sending domain verified (SPF and DKIM): cavman.dev, sender no-reply@cavman.dev; inbound support@cavman.dev forwards via Cloudflare Email Routing (2026-09-30)
-- [x] 🤖 Require email verification in hosted mode; test reset and verification against the real provider (`CAVMAN_REQUIRE_EMAIL_VERIFICATION=1` on cavman.dev; password reset delivered through Resend 2026-09-30; a fresh sign-up verification email not yet tested)
+- [x] 🤖 Require email verification in hosted mode; test reset and verification against the real provider (`CAVMAN_REQUIRE_EMAIL_VERIFICATION=1` on cavman.dev; password reset delivered through Resend 2026-09-30; a fresh sign-up's verification email delivered and confirmed by the owner 2026-10-02)
 
 ### 6. Legal
 - [x] 🧑👥 Terms of service, privacy policy, acceptable-use policy: live at `/terms`, `/privacy` and `/acceptable-use` (signed off by the owner 2026-09-30; not reviewed by a lawyer)
@@ -66,22 +66,23 @@ Approvals on record: live-model campaign spend up to **$50** (OpenRouter).
 - [x] 🤖 Dashboards and alerts: queue age, failed jobs, sandbox health, spend (`deploy/monitoring/`; needs a Prometheus and Grafana to run in, chosen with error reporting below)
 - [x] 🧑 Choose error reporting (e.g. Sentry) and log hosting (Sentry live on cavman.dev since 2026-09-30 for the API, workers and web server; Grafana Cloud chosen for logs 2026-09-30)
 - [x] 🤖 Integrate them (Sentry in the API, workers and web server, off until `SENTRY_DSN` is set; log shipping to Grafana Cloud with Alloy in `compose.prod.yaml`, off until `COMPOSE_PROFILES=logs`; both listed in the privacy policy)
-- [ ] 🧑 Create the Grafana Cloud stack, set `GRAFANA_LOKI_*` and `COMPOSE_PROFILES=logs` on cavman.dev, and confirm logs arrive
+- [x] 🧑 Create the Grafana Cloud stack, set `GRAFANA_LOKI_*` and `COMPOSE_PROFILES=logs` on cavman.dev, and confirm logs arrive (2026-10-01, after #40: Alloy pushing to Grafana Cloud, no dropped entries)
 - [x] 🤖 Runbook: stuck runs, worker outage, restore from backup (`docs/RUNBOOK.md`)
-- [ ] 🤖 Autoscale workers from queue depth
+- [x] 🤖 Worker capacity on one host: `CAVMAN_WORKER_CONCURRENCY` (idle slots cost nothing). Autoscaling across machines is deferred with multi-host (owner, 2026-10-01)
 - [x] 🧑 Backups for Postgres and the shared volume (nightly at ~07:30 UTC, encrypted, off-server to the `cavman-backups` Space: `deploy/backup/`; live since 2026-09-30)
 - [x] 🤖 Tested restore drill (`deploy/backup/restore-drill.sh`: runs in CI on every push; first production drill passed 2026-09-30, logged in RUNBOOK.md)
 
 ## P1: needed for a good launch
 
 ### 9. Billing (if paid)
-- [ ] 🧑 Pricing and plans; approve a Stripe account
+- [x] 🧑 Pricing and plans (approved 2026-10-02: free during the beta at a $1 monthly allowance; then Free with $1 of usage a month, Builder at $20 a month with $12 of usage, and $10 top-ups for $6 of usage; beta users get a discount)
+- [ ] 🧑 Open and approve a Stripe account
 - [ ] 🤖 Checkout, metering tied to account caps, invoices, billing page in Settings
 
 ### 10. Setting expectations about what Cavman can build
 - [x] 🤖 Say in the UI which stacks get real tests (Python, Node/TypeScript) and which are reviewed code only
 - [x] 🤖 Warn before mobile or unsupported-stack builds
-- [ ] 🤖 Run project build scripts (`npm run build`), not just tests
+- [x] 🤖 Run project build scripts (`npm run build`), not just tests (check `npm_build`: the build script runs in the network-denied jail on a scratch copy, without pre/post hooks)
 - [x] 🤖 Cost estimate before a build starts (from what recent completed builds here actually cost, per model mode; plus the ceiling and the monthly allowance left)
 
 ### 11. Talking with a build
@@ -91,8 +92,8 @@ Approvals on record: live-model campaign spend up to **$50** (OpenRouter).
 
 ### 12. GitHub
 - [ ] 🤖 Publish flow end to end against github.com, including the scope upgrade (tested against a stand-in only)
-- [ ] 🤖 Import a real public repository (tested against a local copy only)
-- [ ] 🤖 Private repository import with the user's token
+- [x] 🤖 Import a real public repository (`tests/test_github_live.py` imports octocat/Hello-World from github.com through the API; an advisory CI job runs it on every push)
+- [x] 🤖 Private repository import with the user's token (only the importing user's own token, with the `repo` scope, can import a private repository; the operator token never can; the token is used for the download only)
 - [ ] 🤖 Push updates to an existing repository as a pull request
 
 ### 13. Safe previews of built web apps
@@ -102,26 +103,26 @@ Approvals on record: live-model campaign spend up to **$50** (OpenRouter).
 ### 14. Account
 - [x] 🤖 Session management (see and revoke signed-in devices)
 - [x] 🤖 Change password in Settings
-- [ ] 🤖 Change email in Settings (needs the email provider to verify the new address)
-- [ ] 🤖 Optional two-factor authentication
+- [x] 🤖 Change email in Settings (the current address approves the change, then the new one is verified)
+- [x] 🤖 Optional two-factor authentication (authenticator app plus encrypted single-use backup codes; guards password sign-in, GitHub sign-in relies on GitHub's own)
 
 ### 15. Quality
-- [ ] 🤖 Accessibility audit to WCAG AA
-- [ ] 🤖 Mobile layout check
-- [ ] 🤖 Firefox and Safari (only Chromium is tested)
-- [ ] 🤖 Load test: concurrent builds and live-update connections
-- [ ] 🤖 Pagination on run and project lists; streamed export for large accounts
+- [x] 🤖 Accessibility audit to WCAG AA (axe-core, WCAG 2.1 A and AA, on every page type in every browser in CI: `web/e2e/quality.spec.ts`; fixed low-contrast green and grey text, a link told apart only by colour, and a scroll area keyboards could not reach. Not yet done: a manual pass with a screen reader)
+- [x] 🤖 Mobile layout check (no page wider than the screen on Pixel 7 and iPhone 14 sizes, plus the core build journey on both)
+- [x] 🤖 Firefox and Safari (the accessibility, layout and core build journeys run in Firefox and WebKit, Safari's engine, in CI; the full journey set stays on Chromium)
+- [x] 🤖 Load test: concurrent builds and live-update connections (`scripts/load_test.py`, results in `docs/LOAD_TEST.md`: 100 builds and 500 live connections with no errors; worker slots, not the platform, limit cavman.dev)
+- [x] 🤖 Pagination on run and project lists; streamed export for large accounts (keyset paging, 25 runs or 24 projects a page; the export streams one run at a time through the web server)
 
 ### 16. Onboarding and support
-- [ ] 🤖 First-run guidance, empty states, help/FAQ, pricing page
-- [ ] 🧑 Support contact channel
+- [x] 🤖 First-run guidance, empty states, help/FAQ, pricing page (empty states and pricing were in place; the empty overview now shows how a build goes, and the docs have a Questions section)
+- [x] 🧑 Support contact channel (email only for now: support@cavman.dev, owner's decision 2026-10-02)
 
 ## P2: soon after launch
-- [ ] 🤖 Keep or retire manager mode (its conversation sessions are still local SQLite)
+- [x] 🤖 Keep or retire manager mode (retired 2026-10-02, owner's decision: every build runs the workflow driver, and `CAVMAN_ORCHESTRATION=manager` is refused at startup)
 - [ ] 🤖 More sandbox stacks (Go, Rust, Java)
-- [ ] 🤖 Compare Budget / Balanced / Maximum Quality with real models
-- [ ] 🤖 Dependency update automation (e.g. Renovate)
-- [ ] 🤖 Plan the CI runner move from Ubuntu 24.04 deliberately
+- [x] 🤖 Compare Budget / Balanced / Maximum Quality with real models (2026-10-02: deepseek-v4-flash too weak; suggest deepseek-v4-pro for Budget and Balanced, claude-sonnet-5.5 for Maximum Quality; set `CAVMAN_MODELS_*` to offer them)
+- [x] 🤖 Dependency update automation (Dependabot weekly for pip, npm and GitHub Actions: `.github/dependabot.yml`)
+- [x] 🤖 Plan the CI runner move from Ubuntu 24.04 deliberately (`docs/runbooks/ci-runner-move.md`; an advisory job already runs the suite on Ubuntu 26.04)
 - [ ] 🧑 Privacy-respecting product analytics for the sign-up → first build funnel
 
 ## Suggested order

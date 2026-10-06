@@ -3,7 +3,7 @@ import { betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { getMigrations } from "better-auth/db/migration";
 import { nextCookies } from "better-auth/next-js";
-import { captcha } from "better-auth/plugins";
+import { captcha, twoFactor } from "better-auth/plugins";
 import { existsSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -84,6 +84,16 @@ const options = {
   },
   socialProviders: github,
   user: {
+    // A verified address is changed only after the current address approves it
+    // and the new one is verified, so a stolen session cannot quietly take the account.
+    changeEmail: {
+      enabled: true,
+      sendChangeEmailConfirmation: async ({ user, newEmail, url }: { user: { email: string }; newEmail: string; url: string }) => {
+        await sendEmail(linkEmail(user.email, "Approve your new Cavman email",
+          `Someone asked to change the email for your Cavman account to ${newEmail}. If that was you, approve it; we will then send a link to the new address to confirm it.`,
+          "Approve the change", url));
+      },
+    },
     // Deleting an account requires the password (or, for GitHub-only accounts, a
     // session from the last day). Cavman's data goes first: if a build is
     // still running the API refuses, and the account is kept.
@@ -135,6 +145,10 @@ const options = {
           allowedHostnames: process.env.BETTER_AUTH_URL ? [new URL(process.env.BETTER_AUTH_URL).hostname] : undefined,
         })]
       : []),
+    // Optional two-factor sign-in with an authenticator app, plus single-use backup codes.
+    // It guards email-and-password sign-in; GitHub sign-in relies on GitHub's own.
+    // The TOTP secret is always encrypted with BETTER_AUTH_SECRET; backup codes are too (the default is plain JSON).
+    twoFactor({ issuer: "Cavman", backupCodeOptions: { storeBackupCodes: "encrypted" } }),
     nextCookies(),
   ],
 };

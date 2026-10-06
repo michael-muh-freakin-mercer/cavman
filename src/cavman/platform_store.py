@@ -126,6 +126,15 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _page(where: str, params: tuple, before: tuple[str, str] | None) -> tuple[str, tuple]:
+    """Keyset pagination on (created_at, id), newest first: stable while new rows arrive."""
+    if before is None:
+        return where, params
+    created_at, row_id = before
+    return (f"{where} AND (created_at < ? OR (created_at = ? AND id < ?))",
+            params + (created_at, created_at, row_id))
+
+
 def new_id() -> str:
     return uuid4().hex
 
@@ -377,9 +386,13 @@ class PlatformStore:
         rows = self._query("SELECT * FROM projects WHERE id=?", (project_id,))
         return self._project(rows[0]) if rows else None
 
-    def list_projects(self, owner_id: str) -> list[Project]:
+    def list_projects(self, owner_id: str, *, limit: int | None = None,
+                      before: tuple[str, str] | None = None) -> list[Project]:
+        """Newest first; ``before`` is the (created_at, id) of the last item already shown."""
+        where, params = _page("owner_id=?", (owner_id,), before)
         return [self._project(row) for row in self._query(
-            "SELECT * FROM projects WHERE owner_id=? ORDER BY created_at DESC", (owner_id,))]
+            f"SELECT * FROM projects WHERE {where} ORDER BY created_at DESC, id DESC"
+            + (" LIMIT ?" if limit else ""), params + ((limit,) if limit else ()))]
 
     def touch_project(self, project_id: str) -> None:
         with self._write() as db:
@@ -416,13 +429,19 @@ class PlatformStore:
         rows = self._query("SELECT * FROM runs WHERE id=?", (run_id,))
         return self._run(rows[0]) if rows else None
 
-    def list_runs(self, owner_id: str, project_id: str | None = None) -> list[RunRecord]:
-        if project_id is None:
-            rows = self._query("SELECT * FROM runs WHERE owner_id=? ORDER BY created_at DESC", (owner_id,))
-        else:
-            rows = self._query("SELECT * FROM runs WHERE owner_id=? AND project_id=? "
-                               "ORDER BY created_at DESC", (owner_id, project_id))
+    def list_runs(self, owner_id: str, project_id: str | None = None, *, limit: int | None = None,
+                  before: tuple[str, str] | None = None) -> list[RunRecord]:
+        """Newest first; ``before`` is the (created_at, id) of the last item already shown."""
+        where, params = ("owner_id=?", (owner_id,)) if project_id is None else \
+            ("owner_id=? AND project_id=?", (owner_id, project_id))
+        where, params = _page(where, params, before)
+        rows = self._query(f"SELECT * FROM runs WHERE {where} ORDER BY created_at DESC, id DESC"
+                           + (" LIMIT ?" if limit else ""), params + ((limit,) if limit else ()))
         return [self._run(row) for row in rows]
+
+    def count_runs(self, owner_id: str, project_id: str) -> int:
+        return self._query("SELECT COUNT(*) FROM runs WHERE owner_id=? AND project_id=?",
+                           (owner_id, project_id))[0][0]
 
     def set_budget(self, run_id: str, budget_usd: float) -> None:
         with self._write() as db:
