@@ -2,7 +2,7 @@
 
 Enabled only when ``CAVMAN_EXECUTOR=scripted`` (refused in production). It
 exists so end-to-end tests can exercise the whole product -- durable jobs, the
-real Manager tool surface, real Bubblewrap validation, real review and
+real workflow driver, real Bubblewrap validation, real review and
 acceptance gates, real approvals -- without spending provider credits.
 
 Only the *model* is scripted. Every state change still goes through the
@@ -18,10 +18,9 @@ Scenarios are selected by a tag in the build request:
 - ``#dependent``   a second code task imports the first task's accepted code
 - ``#parallel``    two independent code tasks; the second is rebuilt on the
                    integrated first (stale base, carried-over retry)
-- ``#node``        a TypeScript module checked with Node's test runner (workflow mode)
+- ``#node``        a TypeScript module checked with Node's test runner
 - ``#follow-up``   a later run in an existing project extends the booking core
                    from an earlier run; its tests fail unless that code is present
-                   (workflow mode)
 """
 from __future__ import annotations
 
@@ -36,7 +35,6 @@ from agents.testing import ScriptedModel, assistant_message, function_call
 from agents.usage import Usage
 
 from walter import runtime
-from walter.models import ApprovalStatus
 
 PROVIDER = "cavman-scripted"
 _RAW_USAGE = {"prompt_tokens": 120, "completion_tokens": 40, "total_tokens": 160}
@@ -272,13 +270,6 @@ def _write(task_id: str, prefix: str, files: dict[str, str], summary: str) -> li
     return steps + [_worker_result(task_id, "Wrote " + ", ".join(files) + ".", summary)]
 
 
-def _cycle(task_id: str, suffix: str = "") -> list[dict]:
-    return [_tool("validate_task", {"task_id": task_id}, f"validate-{task_id}{suffix}"),
-            _tool("review_task", {"task_id": task_id}, f"review-{task_id}{suffix}"),
-            _tool("accept_task", {"task_id": task_id, "reason": "Trusted checks and review passed"},
-                  f"accept-{task_id}{suffix}")]
-
-
 def _write_code(prefix: str, module: str) -> list[dict]:
     return [
         _tool("write_file", {"path": "booking.py", "content": module}, f"{prefix}-module"),
@@ -317,174 +308,9 @@ class _PacedModel(ScriptedModel):
         return await super().get_response(*args, **kwargs)
 
 
-def _finish(controller_run: Callable, criteria: list[str], task_for: dict[str, str], summary: str):
-    def responder(_call):
-        run = controller_run()
-        evidence = {c: [run.tasks[task_for[c]].artifact_ids[-1]] for c in criteria}
-        return _tool("finish_run", {"summary": summary, "criterion_evidence_json": json.dumps(evidence)},
-                     "finish")
-    return {"responder": responder}
-
-
-def build_scripts(scenario: str, kind: str, load_run: Callable) -> tuple[list, list]:
-    """Return (manager_steps, worker_steps) for one job of a scenario."""
-    review_pass = _review(True, "Candidate satisfies every acceptance criterion")
-    if scenario == "complete":
-        criteria = [SPEC_CRITERION, CORE_CRITERION]
-        manager = [
-            _tool("set_completion_criteria", {"criteria": criteria}, "criteria"),
-            _tool("plan_tasks", {"packets": [_SPEC_PACKET, {**_CORE_PACKET, "dependencies": ["spec"]}],
-                                 "capabilities": ["model_only", "developer_sandbox"],
-                                 "checks": [["result_schema"], ["compile", "pytest"]]}, "plan"),
-            _tool("delegate_task", {"task_id": "spec"}, "delegate-spec"),
-            _tool("validate_task", {"task_id": "spec"}, "validate-spec"),
-            _tool("review_task", {"task_id": "spec"}, "review-spec"),
-            _tool("accept_task", {"task_id": "spec", "reason": "Validated and independently reviewed"},
-                  "accept-spec"),
-            _tool("delegate_task", {"task_id": "core"}, "delegate-core"),
-            _tool("validate_task", {"task_id": "core"}, "validate-core"),
-            _tool("review_task", {"task_id": "core"}, "review-core"),
-            _tool("accept_task", {"task_id": "core", "reason": "Sandboxed tests passed and review passed"},
-                  "accept-core"),
-            _finish(load_run, criteria, {SPEC_CRITERION: "spec", CORE_CRITERION: "core"},
-                    "Booking core and specification delivered."),
-            _message("Build complete. The specification and the tested booking core were accepted."),
-        ]
-        worker = [
-            _worker_result("spec", "Specification: clients pick an open hourly slot between 10:00 and "
-                           "18:00; a slot can be booked once; double booking is refused.",
-                           "Specification written"),
-            review_pass,
-            *_write_code("v1", BOOKING_MODULE),
-            _tool("read_file", {"path": "booking.py"}, "review-read"),
-            review_pass,
-        ]
-        return manager, worker
-    if scenario == "approval":
-        criteria = [CORE_CRITERION]
-        if kind == "start":
-            manager = [
-                _tool("set_completion_criteria", {"criteria": criteria}, "criteria"),
-                _tool("plan_tasks", {"packets": [_CORE_PACKET], "capabilities": ["developer_sandbox"],
-                                     "checks": [["compile", "pytest"]]}, "plan"),
-                _tool("delegate_task", {"task_id": "core"}, "delegate-core"),
-                _tool("validate_task", {"task_id": "core"}, "validate-core"),
-                _tool("review_task", {"task_id": "core"}, "review-core"),
-                _tool("accept_task", {"task_id": "core", "reason": "Tests and review passed"}, "accept-core"),
-                _tool("request_candidate_approval", {
-                    "task_id": "core", "action": "publish_to_main", "target": "main",
-                    "reason": "Publish the accepted booking core to the project's main branch."},
-                    "request-approval"),
-                _message("The booking core is accepted. I need your approval before publishing it to main."),
-            ]
-            worker = [*_write_code("v1", BOOKING_MODULE),
-                      _tool("read_file", {"path": "booking.py"}, "review-read"), review_pass]
-            return manager, worker
-
-        def decide(_call):
-            run = load_run()
-            approval = next(iter(run.approvals.values()))
-            if approval.status == ApprovalStatus.APPROVED:
-                return _tool("authorize_candidate_action", {
-                    "task_id": "core", "approval_id": approval.id, "action": "publish_to_main",
-                    "target": "main"}, "authorize")
-            return _tool("inspect_run", {}, "inspect-after-rejection")
-        manager = [
-            {"responder": decide},
-            _finish(load_run, criteria, {CORE_CRITERION: "core"},
-                    "Booking core delivered; publication decision recorded."),
-            _message("Build complete. Your approval decision was recorded."),
-        ]
-        return manager, []
-    if scenario == "fail-validation":
-        criteria = [CORE_CRITERION]
-
-        def recover(_call):
-            run = load_run()
-            artifact = run.artifacts[run.tasks["core"].artifact_ids[-1]]
-            failed = [v.check for v in artifact.validations if not v.passed]
-            return _tool("recover_task", {
-                "task_id": "core", "classification": "BAD_OUTPUT",
-                "evidence": "Trusted validation failed: " + ", ".join(failed),
-                "reason": "Revise the candidate so double booking is refused"}, "recover")
-        manager = [
-            _tool("set_completion_criteria", {"criteria": criteria}, "criteria"),
-            _tool("plan_tasks", {"packets": [_CORE_PACKET], "capabilities": ["developer_sandbox"],
-                                 "checks": [["pytest"]]}, "plan"),
-            _tool("delegate_task", {"task_id": "core"}, "delegate-core-1"),
-            _tool("validate_task", {"task_id": "core"}, "validate-core-1"),
-            {"responder": recover},
-            _tool("delegate_task", {"task_id": "core"}, "delegate-core-2"),
-            _tool("validate_task", {"task_id": "core"}, "validate-core-2"),
-            _tool("review_task", {"task_id": "core"}, "review-core"),
-            _tool("accept_task", {"task_id": "core", "reason": "Revised candidate passed tests and review"},
-                  "accept-core"),
-            _finish(load_run, criteria, {CORE_CRITERION: "core"}, "Booking core delivered after one revision."),
-            _message("Build complete after one revision: the first candidate failed its tests and was fixed."),
-        ]
-        worker = [*_write_code("v1", BROKEN_MODULE), *_write_code("v2", BOOKING_MODULE),
-                  _tool("read_file", {"path": "booking.py"}, "review-read"), review_pass]
-        return manager, worker
-    if scenario == "dependent":
-        api_criterion = "Booking endpoint logic builds on the accepted core with passing tests"
-        criteria = [CORE_CRITERION, api_criterion]
-        manager = [
-            _tool("set_completion_criteria", {"criteria": criteria}, "criteria"),
-            _tool("plan_tasks", {"packets": [_CORE_PACKET, {**_API_PACKET, "dependencies": ["core"]}],
-                                 "capabilities": ["developer_sandbox", "developer_sandbox"],
-                                 "checks": [["pytest"], ["pytest", "pytest_regression"]]}, "plan"),
-            _tool("delegate_task", {"task_id": "core"}, "delegate-core"),
-            *_cycle("core"),
-            _tool("delegate_task", {"task_id": "api"}, "delegate-api"),
-            *_cycle("api"),
-            _finish(load_run, criteria, {CORE_CRITERION: "core", api_criterion: "api"},
-                    "Booking core and endpoint logic delivered, integrated and tested together."),
-            _message("Build complete. The endpoint logic was built and tested on top of the accepted core."),
-        ]
-        worker = [
-            *_write_code("core", BOOKING_MODULE),
-            _tool("read_file", {"path": "booking.py"}, "review-core-read"), review_pass,
-            *_write("api", "api", {"api.py": API_MODULE, "test_api.py": API_TESTS}, "Endpoint logic written"),
-            _tool("read_file", {"path": "api.py"}, "review-api-read"), review_pass,
-        ]
-        return manager, worker
-    if scenario == "parallel":
-        notify_criterion = "Reminder text implemented with passing sandboxed tests"
-        criteria = [CORE_CRITERION, notify_criterion]
-        manager = [
-            _tool("set_completion_criteria", {"criteria": criteria}, "criteria"),
-            _tool("plan_tasks", {"packets": [_CORE_PACKET, _NOTIFY_PACKET],
-                                 "capabilities": ["developer_sandbox", "developer_sandbox"],
-                                 "checks": [["pytest"], ["pytest"]]}, "plan"),
-            _tool("delegate_task", {"task_id": "core"}, "delegate-core"),
-            _tool("delegate_task", {"task_id": "notify"}, "delegate-notify"),
-            *_cycle("core"),
-            *_cycle("notify"),  # accept finds a stale base and schedules a retry
-            _tool("delegate_task", {"task_id": "notify"}, "delegate-notify-2"),
-            *_cycle("notify", "-2"),
-            _finish(load_run, criteria, {CORE_CRITERION: "core", notify_criterion: "notify"},
-                    "Booking core and reminders delivered on one integrated codebase."),
-            _message("Build complete. The reminder task was rebuilt on the integrated booking core."),
-        ]
-        worker = [
-            *_write_code("core", BOOKING_MODULE),
-            *_write("notify", "notify", {"notify.py": NOTIFY_MODULE, "test_notify.py": NOTIFY_TESTS},
-                    "Reminder text written"),
-            _tool("read_file", {"path": "booking.py"}, "review-core-read"), review_pass,
-            _tool("read_file", {"path": "notify.py"}, "review-notify-read"), review_pass,
-            # Retry: the previous attempt was carried over onto the new base.
-            _tool("inspect_diff", {}, "notify-retry-diff"),
-            _worker_result("notify", "Verified the carried-over reminder module on the latest code.",
-                           "Reminder text rebased"),
-            _tool("read_file", {"path": "notify.py"}, "review-notify-read-2"), review_pass,
-        ]
-        return manager, worker
-    raise ValueError(f"Unknown scripted scenario {scenario}")
-
-
 # Workflow-mode scripts -------------------------------------------------------
 #
-# In workflow mode the "manager" model only plans, and specialists for
+# The planner model only plans, and specialists for
 # independent tasks run concurrently, so one ordered script cannot describe
 # them. Specialist steps are therefore keyed by (task_id, role) and routed by
 # the task named in each call's input.
@@ -599,10 +425,9 @@ def build_workflow_scripts(scenario: str, kind: str) -> tuple[list, dict]:
 class ScriptedProvider:
     """Registered with the runtime's provider seam; one model pair per job."""
 
-    def __init__(self, load_run_for: Callable[[str], Callable], delay: float, *, workflow: bool = False):
+    def __init__(self, load_run_for: Callable[[str], Callable], delay: float):
         self._load_run_for = load_run_for
         self._delay = delay
-        self._workflow = workflow
         self._pairs: dict[str, tuple] = {}
         self._jobs: dict[str, tuple[str, str]] = {}
         self._lock = threading.Lock()
@@ -623,13 +448,9 @@ class ScriptedProvider:
                 run_id, kind = self._jobs[job_key]
                 load_run = self._load_run_for(run_id)
                 scenario = scenario_for(load_run().objective)
-                if self._workflow:
-                    planner, specialists = build_workflow_scripts(scenario, kind)
-                    self._pairs[job_key] = (_PacedModel(planner, self._delay),
-                                            _RoutedModel(specialists, self._delay))
-                else:
-                    manager, worker = build_scripts(scenario, kind, load_run)
-                    self._pairs[job_key] = (_PacedModel(manager, self._delay), _PacedModel(worker, self._delay))
+                planner, specialists = build_workflow_scripts(scenario, kind)
+                self._pairs[job_key] = (_PacedModel(planner, self._delay),
+                                        _RoutedModel(specialists, self._delay))
             return self._pairs[job_key]
 
 

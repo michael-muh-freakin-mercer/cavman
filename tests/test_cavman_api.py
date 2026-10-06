@@ -415,30 +415,11 @@ def test_delivery_refuses_an_integration_branch_moved_outside_cavman(client, set
 
 
 @needs_sandbox
-@pytest.mark.parametrize("prompt", ["Booking app", "Booking #parallel", "Booking #approval"])
-def test_manager_orchestration_mode_still_completes(settings, prompt):
-    from dataclasses import replace
-    manager_mode = replace(settings, orchestration="manager")
-    with TestClient(create_app(manager_mode)) as client:
-        run_id = build(client, prompt=prompt)["run_id"]
-        drain(manager_mode)
-        detail = client.get(f"/api/runs/{run_id}", headers=ALICE).json()
-        if detail["state"] == "approval_needed":
-            approval = detail["approvals"][0]
-            client.post(f"/api/runs/{run_id}/approvals/{approval['id']}",
-                        json={"decision": "approve", "scope_digest": approval["scope_digest"]}, headers=ALICE)
-            drain(manager_mode)
-            detail = client.get(f"/api/runs/{run_id}", headers=ALICE).json()
-    assert detail["state"] == "complete" and detail["orchestration"] == "manager"
-    assert detail["usage"]["by_role"]["manager"]["calls"] > 1
-
-
-@needs_sandbox
 def test_workflow_mode_spends_one_planning_call_and_no_manager_calls(client, settings):
     run_id = build(client)["run_id"]
     drain(settings)
     detail = client.get(f"/api/runs/{run_id}", headers=ALICE).json()
-    assert detail["state"] == "complete" and detail["orchestration"] == "workflow"
+    assert detail["state"] == "complete"
     assert detail["usage"]["by_role"]["planner"]["calls"] == 1
     assert "manager" not in detail["usage"]["by_role"]
 

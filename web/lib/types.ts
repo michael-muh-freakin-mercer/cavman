@@ -42,7 +42,6 @@ export interface RunSummary {
   project_name: string;
   prompt: string;
   executor: "provider" | "scripted";
-  orchestration: "workflow" | "manager";
   status: "active" | "completed" | "abandoned";
   state: RunState;
   label: string;
@@ -294,7 +293,6 @@ export interface ProjectView {
 export interface SystemView {
   version: string;
   executor: "provider" | "scripted";
-  orchestration: "workflow" | "manager";
   model_modes: { mode: ModelMode; available: boolean; manager_model: string | null; worker_model: string | null }[];
   provider: { configured: boolean; provider?: string; manager_model?: string; worker_model?: string; problem?: string };
   sandbox: { available: boolean; bubblewrap: boolean; prlimit: boolean };

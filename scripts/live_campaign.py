@@ -51,7 +51,6 @@ def parse_args(argv):
     parser.add_argument("--total-budget-usd", type=float, default=10.0)
     parser.add_argument("--max-calls", type=int, default=150, help="Model-call ceiling per run")
     parser.add_argument("--executor", choices=["provider", "scripted"], default="provider")
-    parser.add_argument("--orchestration", choices=["workflow", "manager"], default="workflow")
     parser.add_argument("--data-dir", type=Path, help="Keep campaign state here (default: temporary)")
     parser.add_argument("--out", type=Path, default=REPO / "docs" / "live-campaign")
     parser.add_argument("--allow-unknown-cost", action="store_true",
@@ -114,7 +113,7 @@ def write_report(args, stamp: str, started_at, models: str, rows: list[dict], sp
     completed = [r for r in rows if r.get("state") == "complete"]
     costs = sorted(r["cost_usd"] for r in rows if "cost_usd" in r)
     summary = {
-        "started_at": started_at.isoformat(), "executor": args.executor, "orchestration": args.orchestration,
+        "started_at": started_at.isoformat(), "executor": args.executor,
         "models": models, "requests": len(rows), "completed": len(completed),
         "completion_rate": round(len(completed) / len(rows), 3) if rows else 0.0,
         "total_cost_usd": round(spent, 6), "median_cost_usd": costs[len(costs) // 2] if costs else None,
@@ -123,7 +122,7 @@ def write_report(args, stamp: str, started_at, models: str, rows: list[dict], sp
     }
     (args.out / f"{stamp}.json").write_text(json.dumps(summary, indent=2))
     lines = [f"# Live campaign {stamp}", "",
-             f"Executor: {args.executor} · orchestration: {args.orchestration} · models: {models}", "",
+             f"Executor: {args.executor} · models: {models}", "",
              f"Completed {len(completed)} of {len(rows)} requests "
              f"({summary['completion_rate']:.0%}); provider-reported cost ${spent:.4f}"
              + ("" if summary["cost_complete"] else " (some calls reported no cost)") + ".", "",
@@ -176,7 +175,7 @@ def main(argv=None) -> int:
     data_dir = args.data_dir or Path(tempfile.mkdtemp(prefix="cavman-campaign-"))
     token = "campaign-" + "x" * 40
     settings = Settings(data_dir=data_dir, api_token=token, executor=args.executor,
-                        orchestration=args.orchestration, default_budget_usd=args.run_budget_usd,
+                        default_budget_usd=args.run_budget_usd,
                         max_budget_usd=max(args.run_budget_usd, 0.01),
                         default_max_model_calls=args.max_calls, scripted_step_delay=0)
     headers = {"Authorization": f"Bearer {token}", "X-Cavman-User": "campaign"}
