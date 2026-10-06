@@ -108,6 +108,39 @@ CREATE TABLE IF NOT EXISTS deliveries(
   archive_name TEXT,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS billing_accounts(
+  owner_id TEXT PRIMARY KEY,
+  customer_id TEXT UNIQUE,
+  subscription_id TEXT,
+  status TEXT,
+  period_end TEXT,
+  cancel_at_period_end INTEGER NOT NULL DEFAULT 0,
+  trial_used INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS credit_grants(
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL,
+  usd REAL NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS credit_grants_owner ON credit_grants(owner_id);
+CREATE TABLE IF NOT EXISTS credit_debits(
+  owner_id TEXT NOT NULL,
+  month TEXT NOT NULL,
+  usd REAL NOT NULL,
+  PRIMARY KEY(owner_id, month)
+);
+CREATE TABLE IF NOT EXISTS plan_months(
+  owner_id TEXT NOT NULL,
+  month TEXT NOT NULL,
+  usd REAL NOT NULL,
+  PRIMARY KEY(owner_id, month)
+);
+CREATE TABLE IF NOT EXISTS stripe_events(
+  id TEXT PRIMARY KEY,
+  received_at TEXT NOT NULL
+);
 """
 
 
@@ -319,6 +352,72 @@ class PlatformStore:
     def project_count(self, owner_id: str) -> int:
         return self._query("SELECT COUNT(*) FROM projects WHERE owner_id=?", (owner_id,))[0][0]
 
+    # Billing ------------------------------------------------------------
+    # Stripe is the record of payment; these rows hold only what limits need:
+    # the account's plan, the usage credit bought, and how much of it is used.
+
+    BILLING_FIELDS = ("customer_id", "subscription_id", "status", "period_end", "cancel_at_period_end", "trial_used")
+
+    def billing_account(self, owner_id: str) -> dict | None:
+        rows = self._query("SELECT * FROM billing_accounts WHERE owner_id=?", (owner_id,))
+        return dict(rows[0]) if rows else None
+
+    def billing_owner(self, customer_id: str) -> str | None:
+        rows = self._query("SELECT owner_id FROM billing_accounts WHERE customer_id=?", (customer_id,))
+        return rows[0][0] if rows else None
+
+    def save_billing(self, owner_id: str, **fields) -> None:
+        unknown = set(fields) - set(self.BILLING_FIELDS)
+        if unknown:
+            raise ValueError(f"Unknown billing fields: {sorted(unknown)}")
+        with self._write() as db:
+            db.execute("INSERT INTO billing_accounts(owner_id, updated_at) VALUES(?,?) "
+                       "ON CONFLICT(owner_id) DO NOTHING", (owner_id, _now()))
+            for name, value in fields.items():
+                db.execute(f"UPDATE billing_accounts SET {name}=?, updated_at=? WHERE owner_id=?",
+                           (value, _now(), owner_id))
+
+    def stripe_event_seen(self, event_id: str) -> bool:
+        return bool(self._query("SELECT 1 FROM stripe_events WHERE id=?", (event_id,)))
+
+    def record_stripe_event(self, event_id: str) -> None:
+        with self._write() as db:
+            db.execute("INSERT INTO stripe_events VALUES(?,?) ON CONFLICT(id) DO NOTHING", (event_id, _now()))
+
+    def grant_credit(self, grant_id: str, owner_id: str, usd: float) -> bool:
+        """Add bought usage credit once per payment; False when already granted."""
+        with self._write() as db:
+            return db.execute("INSERT INTO credit_grants VALUES(?,?,?,?) ON CONFLICT(id) DO NOTHING",
+                              (grant_id, owner_id, usd, _now())).rowcount == 1
+
+    def reduce_credit(self, grant_id: str, usd: float) -> None:
+        """Lower a grant after a refund; never below zero."""
+        with self._write() as db:
+            db.execute("UPDATE credit_grants SET usd=? WHERE id=? AND usd>?", (max(0.0, usd), grant_id, max(0.0, usd)))
+
+    def credit_grants(self, owner_id: str) -> list[tuple[float, str]]:
+        return [(row[0], row[1]) for row in self._query(
+            "SELECT usd, created_at FROM credit_grants WHERE owner_id=? ORDER BY created_at", (owner_id,))]
+
+    def credit_debits(self, owner_id: str) -> dict[str, float]:
+        return {row[0]: row[1] for row in self._query(
+            "SELECT month, usd FROM credit_debits WHERE owner_id=?", (owner_id,))}
+
+    def record_debit(self, owner_id: str, month: str, usd: float) -> None:
+        with self._write() as db:
+            db.execute("INSERT INTO credit_debits VALUES(?,?,?) ON CONFLICT(owner_id, month) DO NOTHING",
+                       (owner_id, month, usd))
+
+    def note_plan_month(self, owner_id: str, month: str, usd: float) -> None:
+        """Remember the largest plan allowance an account had in a month."""
+        with self._write() as db:
+            db.execute("INSERT INTO plan_months VALUES(?,?,?) ON CONFLICT(owner_id, month) DO UPDATE SET "
+                       "usd=excluded.usd WHERE excluded.usd > plan_months.usd", (owner_id, month, usd))
+
+    def plan_month(self, owner_id: str, month: str) -> float | None:
+        rows = self._query("SELECT usd FROM plan_months WHERE owner_id=? AND month=?", (owner_id, month))
+        return rows[0][0] if rows else None
+
     # Account erasure ----------------------------------------------------
 
     def delete_owner(self, owner_id: str) -> dict:
@@ -339,6 +438,8 @@ class PlatformStore:
                 db.execute(f"DELETE FROM {table} WHERE run_id IN ({owned})", (owner_id,))
             db.execute("DELETE FROM publications WHERE owner_id=?", (owner_id,))
             db.execute("DELETE FROM rate_events WHERE owner_id=?", (owner_id,))
+            for table in ("billing_accounts", "credit_grants", "credit_debits", "plan_months"):
+                db.execute(f"DELETE FROM {table} WHERE owner_id=?", (owner_id,))
             db.execute("DELETE FROM runs WHERE owner_id=?", (owner_id,))
             db.execute(f"DELETE FROM project_leases WHERE project_id IN "
                        f"(SELECT id FROM projects WHERE owner_id=?)", (owner_id,))

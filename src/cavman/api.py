@@ -37,6 +37,7 @@ from walter.orchestration import GateError
 from . import __version__, importer
 from .config import EXECUTOR_PROVIDER, Settings
 from .accounts import account_disk_bytes, account_usage, cost_history, server_usage
+from .billing import Billing, BillingError
 from .delivery import deliver_run
 from .engine import ApprovalScopeChanged, Engine
 from .platform_store import RunRecord, new_id
@@ -103,6 +104,10 @@ class BudgetRequest(BaseModel):
     budget_usd: float = Field(gt=0)
 
 
+class CheckoutRequest(BaseModel):
+    kind: Literal["builder", "topup"]
+
+
 # Helpers -------------------------------------------------------------------
 
 def project_name_from_prompt(prompt: str) -> str:
@@ -164,6 +169,13 @@ def principal(request: Request, authorization: Annotated[str | None, Header()] =
 
 
 User = Annotated[str, Depends(principal)]
+
+
+def service(request: Request, authorization: Annotated[str | None, Header()] = None) -> None:
+    """Authenticate the calling web server for requests on no user's behalf."""
+    expected = f"Bearer {request.app.state.settings.api_token}"
+    if not authorization or not hmac.compare_digest(authorization.encode(), expected.encode()):
+        raise HTTPException(401, "Missing or invalid service credentials.")
 # The importing user's GitHub token, set only by the web server from its auth store.
 GitHubToken = Annotated[str | None, Header(max_length=500)]
 
@@ -213,6 +225,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.engine = engine
     app.state.platform = platform
+    billing = Billing(settings, platform)
+    app.state.billing = billing
 
 
     def owned_run(user: str, run_id: str) -> RunRecord:
@@ -267,6 +281,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.exception_handler(GateError)
     async def gate_error(_request, exc: GateError):
         return JSONResponse({"detail": str(exc)}, status_code=409)
+
+    @app.exception_handler(BillingError)
+    async def billing_error(_request, exc: BillingError):
+        return JSONResponse({"detail": str(exc)}, status_code=exc.status)
 
     # Public -----------------------------------------------------------
 
@@ -344,7 +362,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(402, "Your monthly spending limit is reached "
                                      f"(${usage['spent_usd']:.2f} of ${usage['limit_usd']:.2f}, "
                                      f"{usage['model_calls']} of {usage['max_model_calls']} model calls). "
-                                     "New work starts again next month or when an operator raises the limit.")
+                                     + ("New work starts again next month, or add usage from Settings > Billing."
+                                        if billing.enabled else
+                                        "New work starts again next month or when an operator raises the limit."))
 
     def _wait(seconds: float) -> str:
         minutes = math.ceil(seconds / 60)
@@ -421,14 +441,46 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         return StreamingResponse(body(), media_type="application/json")
 
+    # Billing ----------------------------------------------------------
+
+    @app.get("/api/billing")
+    def billing_view(user: User):
+        return billing.view(user, account_usage(engine, platform, settings, user)["credit_usd"])
+
+    @app.post("/api/billing/checkout")
+    def billing_checkout(body: CheckoutRequest, user: User):
+        act(user)
+        return {"url": billing.checkout(user, body.kind)}
+
+    @app.post("/api/billing/portal")
+    def billing_portal(user: User):
+        act(user)
+        return {"url": billing.portal(user)}
+
+    @app.post("/api/billing/webhook", dependencies=[Depends(service)])
+    async def billing_webhook(request: Request, stripe_signature: Annotated[str | None, Header()] = None):
+        """Stripe's events, relayed byte for byte by the web server."""
+        if not stripe_signature:
+            raise HTTPException(400, "Missing Stripe-Signature.")
+        payload = await request.body()
+        try:
+            handled = await asyncio.to_thread(billing.handle, payload, stripe_signature)
+        except ValueError:
+            raise HTTPException(400, "Invalid Stripe signature.") from None
+        return {"received": handled}
+
     @app.delete("/api/account")
     def delete_account(user: User):
         from .erasure import erase_account
         from .platform_store import ActiveWork
+        subscription = platform.billing_account(user)
         try:
-            return {"deleted": erase_account(settings, engine, platform, user)}
+            deleted = erase_account(settings, engine, platform, user)
         except ActiveWork as exc:
             raise HTTPException(409, str(exc)) from None
+        # After the erase succeeded: a refused deletion keeps its plan.
+        billing.cancel_for_deletion(subscription)
+        return {"deleted": deleted}
 
     # Builds -----------------------------------------------------------
 
