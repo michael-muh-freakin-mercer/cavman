@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-06 — Sentry 11
+
+- `@sentry/nextjs` 10 → 11. Sentry 11 drops `sendDefaultPii` and collects every kind of data by default, now including local variable values in stack frames. The web server turns each category off in `dataCollection` (user, cookies, bodies, query strings, response headers, stack-frame variables and the rest) and keeps only the request headers `scrubEvent` already kept, so reports carry no more than before.
+
 ## 2026-10-02 — Start from a private GitHub repository
 
 - A new project can start from a private GitHub repository the user can read. The web server reads the user's own GitHub token from the encrypted auth store, only when the account has granted the `repo` scope and the request names a repository. It sends the token to the API in an `X-Cavman-GitHub-Token` header the browser cannot set. The importer uses it for GitHub's metadata and the download, and never stores or logs it.
