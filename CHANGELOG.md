@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-06 — Sentry 11
+
+- `@sentry/nextjs` 10 → 11. Sentry 11 drops `sendDefaultPii` and collects every kind of data by default, now including local variable values in stack frames. The web server turns each category off in `dataCollection` (user, cookies, bodies, query strings, response headers, stack-frame variables and the rest) and keeps only the request headers `scrubEvent` already kept, so reports carry no more than before.
+
 ## 2026-10-02 — Manager mode is retired
 
 - Every build now runs the workflow driver, where plain code drives plan, delegate, validate, review and accept, and models only plan, build and review. The original mode, where a Manager model drove each step through tool calls, used far more model calls and was never used on cavman.dev. It is gone, along with its scripted test models, the `--orchestration` flag of the live campaign, `CAVMAN_MANAGER_MAX_TURNS`, and the per-run conversation sessions it kept in local SQLite.
