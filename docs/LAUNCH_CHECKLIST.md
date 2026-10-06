@@ -76,8 +76,8 @@ Approvals on record: live-model campaign spend up to **$50** (OpenRouter); misc 
 
 ### 9. Billing (if paid)
 - [x] 🧑 Pricing and plans (approved 2026-10-02: free during the beta at a $1 monthly allowance; then Free with $1 of usage a month, Builder at $20 a month with $12 of usage, and $10 top-ups for $6 of usage; beta users get a discount)
-- [ ] 🧑 Open and approve a Stripe account
-- [ ] 🤖 Checkout, metering tied to account caps, invoices, billing page in Settings
+- [ ] 🧑 Open and approve a Stripe account (sandbox connected 2026-10-02; Managed Payments and a free first month chosen 2026-10-06; live activation and keys pending)
+- [ ] 🤖 Checkout, metering tied to account caps, invoices, billing page in Settings (built: Stripe-hosted Checkout with Managed Payments, plan and top-up credit in the account limit, customer portal for invoices, Billing in Settings; `docs/BILLING.md`. Tested with a stand-in for Stripe's API; a sandbox purchase end to end waits on test keys)
 
 ### 10. Setting expectations about what Cavman can build
 - [x] 🤖 Say in the UI which stacks get real tests (Python, Node/TypeScript) and which are reviewed code only

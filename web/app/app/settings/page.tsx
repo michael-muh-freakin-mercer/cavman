@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { AccountData } from "@/components/app/account-data";
+import { BillingPanel } from "@/components/app/billing-panel";
 import { ChangeEmail } from "@/components/app/change-email";
 import { TwoFactorSettings } from "@/components/app/two-factor-settings";
 import { SecurityPanel } from "@/components/app/security-panel";
@@ -13,7 +14,7 @@ import { describeDevice } from "@/lib/devices";
 import { formatUsd } from "@/lib/format";
 import { load } from "@/lib/load";
 import { requireUser } from "@/lib/session";
-import type { AccountSpending, SystemView } from "@/lib/types";
+import type { AccountSpending, BillingView, SystemView } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Settings" };
 
@@ -24,13 +25,14 @@ const MODES: Record<string, { name: string; body: string }> = {
   quality: { name: "Maximum Quality", body: "The strongest configured models, regardless of cost." },
 };
 
-export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ email?: string }> }) {
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ email?: string; billing?: string }> }) {
   const user = await requireUser("/app/settings");
-  const { email: emailChange } = await searchParams;
+  const { email: emailChange, billing: billingOutcome } = await searchParams;
   const requestHeaders = await headers();
-  const [system, account, signIns, sessions, current] = await Promise.all([
+  const [system, account, billing, signIns, sessions, current] = await Promise.all([
     load<SystemView>(user.id, "system"),
     load<{ spending: AccountSpending }>(user.id, "account"),
+    load<BillingView>(user.id, "billing"),
     auth.api.listUserAccounts({ headers: requestHeaders }),
     auth.api.listSessions({ headers: requestHeaders }),
     auth.api.getSession({ headers: requestHeaders }),
@@ -55,6 +57,11 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           ) : null}
           <div className="mt-4"><ChangeEmail email={user.email} verified={user.emailVerified} /></div>
         </Panel>
+        {billing.ok && billing.data.enabled ? (
+          <Panel id="billing" title="Billing" description="Your plan and usage credit. Payments are made through Stripe.">
+            <BillingPanel billing={billing.data} outcome={billingOutcome} />
+          </Panel>
+        ) : null}
         <Panel title="GitHub" description="Cavman never pushes or creates repositories without your explicit approval.">
           <p className="text-sm text-fg-soft">
             {githubEnabled
