@@ -180,7 +180,8 @@ class Worker:
             driver = WorkflowDriver(
                 controller, platform_notes=PLATFORM_NOTES,
                 load_state=lambda: self.platform.workflow_state(job.run_id),
-                save_state=lambda state: self.platform.save_workflow_state(job.run_id, state))
+                save_state=lambda state: self.platform.save_workflow_state(job.run_id, state),
+                load_instructions=lambda: [i["text"] for i in self.platform.instructions(job.run_id)])
             task = asyncio.create_task(driver.run())
             while not task.done():
                 done, _ = await asyncio.wait({task}, timeout=self.settings.heartbeat_seconds)

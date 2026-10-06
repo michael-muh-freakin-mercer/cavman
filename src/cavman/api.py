@@ -89,6 +89,20 @@ class ContinueRequest(BaseModel):
     message: str = Field(default="", max_length=4000)
 
 
+class InstructionRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=4000)
+
+    @field_validator("message")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Write an instruction.")
+        return value
+
+
+MAX_INSTRUCTIONS = 20
+
+
 class AbandonRequest(BaseModel):
     reason: str = Field(min_length=3, max_length=2000)
 
@@ -272,6 +286,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         view = projector.run_detail(run, record, platform.jobs(record.id), engine.events(record.id),
                                     project_name(record.project_id), delivery_view(record.id))
         view["publication"] = publication_view(record.id)
+        view["instructions"] = [{key: item[key] for key in ("id", "text", "created_at")}
+                                for item in platform.instructions(record.id)]
         return view
 
     @app.exception_handler(importer.RepositoryImportError)
@@ -720,17 +736,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(409, "This run has finished; start a new build instead.")
         if settings.executor == EXECUTOR_PROVIDER and not _provider_status()["configured"]:
             raise HTTPException(503, "Cavman's model provider is not configured on the server.")
-        if body.message.strip():
-            raise HTTPException(422, "Follow-up instructions are not supported by this server yet. "
-                                     "Continue without an instruction, or start a new build.")
         require_account_allowance(user)
         if platform.active_job(record.id) is None:
             require_capacity(user, new_project=False)
             rate_limit(user, "build", settings.builds_per_hour, 3600, "new builds per hour")
-        job, created = platform.enqueue(record.id, "continue", body.message.strip())
+        message = body.message.strip()
+        if message and platform.active_job(record.id) is not None:
+            raise HTTPException(409, "This run is already executing.")
+        job, created = platform.enqueue(record.id, "continue", message)
         if not created:
             raise HTTPException(409, "This run is already executing.")
+        if message:
+            # Instructions are kept instructions beside the run; every later step reads them.
+            platform.add_instruction(record.id, engine.redact(message, limit=4000))
         return {"job": projector.job(job)}
+
+    @app.post("/api/runs/{run_id}/instructions", status_code=201)
+    def add_instruction(run_id: str, body: InstructionRequest, user: User):
+        """Direction for a build while it runs: specialists and reviewers starting
+        work after this see it. Work already accepted is not redone."""
+        act(user)
+        record = owned_run(user, run_id)
+        if engine.load(record.id).status != "active":
+            raise HTTPException(409, "This run has finished. Ask for changes in a follow-up instead.")
+        if len(platform.instructions(record.id)) >= MAX_INSTRUCTIONS:
+            raise HTTPException(429, f"A run takes at most {MAX_INSTRUCTIONS} instructions.")
+        item = platform.add_instruction(record.id, engine.redact(body.message.strip(), limit=4000))
+        return {"instruction": {key: item[key] for key in ("id", "text", "created_at")}}
 
     @app.post("/api/runs/{run_id}/stop", status_code=202)
     def stop_run(run_id: str, user: User):

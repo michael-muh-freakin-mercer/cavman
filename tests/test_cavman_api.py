@@ -440,11 +440,64 @@ def test_rejected_capability_leaves_the_task_blocked(client, settings):
     assert next(t for t in detail["tasks"] if t["id"] == "core")["state"] == "Blocked"
 
 
-def test_workflow_mode_refuses_follow_up_instructions(client):
+@pytest.fixture
+def seen_instructions(monkeypatch):
+    """Every model conversation's system instructions and input, by role."""
+    from walter.adapter import DurableController
+
+    seen, invoke = [], DurableController._invoke
+
+    async def recording(self, **kwargs):
+        seen.append((kwargs["role"], kwargs["instructions"], kwargs["input"]))
+        return await invoke(self, **kwargs)
+
+    monkeypatch.setattr(DurableController, "_invoke", recording)
+    return seen
+
+
+@needs_sandbox
+def test_an_instruction_while_a_build_runs_reaches_later_specialists_and_reviewers(
+        client, settings, seen_instructions):
+    run_id = build(client)["run_id"]  # queued: no worker has picked it up yet
+    added = client.post(f"/api/runs/{run_id}/instructions", headers=ALICE,
+                        json={"message": "Store times in UTC"})
+    assert added.status_code == 201 and added.json()["instruction"]["text"] == "Store times in UTC"
+    assert client.post(f"/api/runs/{run_id}/instructions", headers=MALLORY,
+                       json={"message": "x"}).status_code == 404
+    assert client.post(f"/api/runs/{run_id}/instructions", headers=ALICE,
+                       json={"message": "   "}).status_code == 422
+    drain(settings)
+    detail = client.get(f"/api/runs/{run_id}", headers=ALICE).json()
+    assert detail["state"] == "complete"
+    assert [i["text"] for i in detail["instructions"]] == ["Store times in UTC"]
+    workers = [instructions for role, instructions, _ in seen_instructions if role == "worker"]
+    reviewers = [payload for role, _, payload in seen_instructions if role == "reviewer"]
+    assert workers and all("1) Store times in UTC" in text for text in workers)
+    assert reviewers and all(json.loads(payload)["owner_instructions"] == ["Store times in UTC"]
+                             for payload in reviewers)
+    finished = client.post(f"/api/runs/{run_id}/instructions", headers=ALICE, json={"message": "more"})
+    assert finished.status_code == 409
+
+
+@needs_sandbox
+def test_continuing_with_an_instruction_records_it_for_the_rest_of_the_build(client, settings, seen_instructions):
     run_id = build(client)["run_id"]
     client.post(f"/api/runs/{run_id}/stop", headers=ALICE)
     response = client.post(f"/api/runs/{run_id}/continue", json={"message": "add dark mode"}, headers=ALICE)
-    assert response.status_code == 422
+    assert response.status_code == 202
+    drain(settings)
+    detail = client.get(f"/api/runs/{run_id}", headers=ALICE).json()
+    assert [i["text"] for i in detail["instructions"]] == ["add dark mode"]
+    assert any("1) add dark mode" in text for role, text, _ in seen_instructions if role == "worker")
+
+
+def test_a_run_takes_a_bounded_number_of_instructions(client):
+    run_id = build(client)["run_id"]
+    for index in range(20):
+        assert client.post(f"/api/runs/{run_id}/instructions", headers=ALICE,
+                           json={"message": f"note {index}"}).status_code == 201
+    assert client.post(f"/api/runs/{run_id}/instructions", headers=ALICE,
+                       json={"message": "one too many"}).status_code == 429
 
 
 @needs_sandbox

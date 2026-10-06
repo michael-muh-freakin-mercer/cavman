@@ -61,6 +61,14 @@ export function RunDashboard({ initial, githubEnabled = false }: { initial: RunD
             </div>
             <h1 className="mt-3 text-2xl font-extrabold tracking-tight text-fg sm:text-3xl">{run.project_name}</h1>
             <p className="mt-2 line-clamp-2 max-w-3xl text-sm text-muted">“{run.prompt}”</p>
+            {run.instructions?.length ? (
+              <div className="mt-3 max-w-3xl">
+                <p className="text-xs font-semibold text-muted">Your instructions during the build</p>
+                <ol className="mt-1 list-decimal space-y-0.5 pl-5 text-sm text-fg-soft" aria-label="Your instructions during the build">
+                  {run.instructions.map((item) => <li key={item.id}>{item.text}</li>)}
+                </ol>
+              </div>
+            ) : null}
           </div>
         </div>
         <RunControls
@@ -71,6 +79,10 @@ export function RunDashboard({ initial, githubEnabled = false }: { initial: RunD
           }}
           onContinue={async (message) => {
             await postJson(`runs/${run.id}/continue`, { message });
+            await refresh();
+          }}
+          onInstruct={async (message) => {
+            await postJson(`runs/${run.id}/instructions`, { message });
             await refresh();
           }}
           onAbandon={async (reason) => {

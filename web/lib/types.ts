@@ -227,8 +227,15 @@ export interface DeliveryView {
   downloadable: boolean;
 }
 
+export interface RunInstruction {
+  id: string;
+  text: string;
+  created_at: string;
+}
+
 export interface RunDetail extends RunSummary {
   objective: string;
+  instructions?: RunInstruction[];
   constraints: string[];
   criteria: string[];
   tasks: TaskView[];

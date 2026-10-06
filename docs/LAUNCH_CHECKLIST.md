@@ -87,7 +87,7 @@ Approvals on record: live-model campaign spend up to **$50** (OpenRouter); misc 
 
 ### 11. Talking with a build
 - [ ] 🤖 Clarifying questions as first-class "Cavman needs your input" requests
-- [ ] 🤖 Instructions mid-run (workflow mode rejects messages today)
+- [x] 🤖 Instructions mid-run (Add an instruction while a build runs, or with Continue; later specialists and reviewers follow it; accepted work is not redone)
 - [ ] 🤖 Email when a build finishes or needs an approval
 
 ### 12. GitHub
