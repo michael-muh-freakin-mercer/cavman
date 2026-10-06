@@ -86,7 +86,7 @@ Approvals on record: live-model campaign spend up to **$50** (OpenRouter); misc 
 - [x] 🤖 Cost estimate before a build starts (from what recent completed builds here actually cost, per model mode; plus the ceiling and the monthly allowance left)
 
 ### 11. Talking with a build
-- [ ] 🤖 Clarifying questions as first-class "Cavman needs your input" requests
+- [x] 🤖 Clarifying questions as first-class "Cavman needs your input" requests (the planner may ask up to three questions once, before planning; the run shows them and the answer continues it)
 - [x] 🤖 Instructions mid-run (Add an instruction while a build runs, or with Continue; later specialists and reviewers follow it; accepted work is not redone)
 - [ ] 🤖 Email when a build finishes or needs an approval
 

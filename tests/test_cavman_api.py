@@ -1012,6 +1012,29 @@ def test_estimate_endpoint_returns_ceiling_and_allowance(client):
     assert client.get("/api/estimate").status_code == 401
 
 
+@needs_sandbox
+def test_a_build_can_ask_its_owner_questions_before_planning(client, settings, seen_instructions):
+    run_id = build(client, prompt="Booking app #questions")["run_id"]
+    drain(settings)
+    detail = client.get(f"/api/runs/{run_id}", headers=ALICE).json()
+    assert detail["state"] == "input_needed" and detail["label"] == "Needs your input"
+    assert detail["questions"] == ["Should clients pay a deposit when they book?", "Which hours is the studio open?"]
+    assert detail["tasks"] == []
+    listed = client.get("/api/runs", headers=ALICE).json()["runs"][0]
+    assert listed["state"] == "input_needed"
+    answered = client.post(f"/api/runs/{run_id}/continue", headers=ALICE,
+                           json={"message": "No deposit. Open 10:00 to 18:00."})
+    assert answered.status_code == 202
+    drain(settings)
+    detail = client.get(f"/api/runs/{run_id}", headers=ALICE).json()
+    assert detail["state"] == "complete" and detail["questions"] == []
+    planners = [payload for role, _, payload in seen_instructions if role == "planner"]
+    assert len(planners) == 2
+    assert "No deposit. Open 10:00 to 18:00." in planners[1] and "Should clients pay a deposit" in planners[1]
+    planner_rules = [text for role, text, _ in seen_instructions if role == "planner"]
+    assert "Do not ask again" in planner_rules[1] and "Do not ask again" not in planner_rules[0]
+
+
 def stopped(client, **extra):
     """Start a build and stop it at once, so the concurrent-build cap never applies."""
     made = build(client, **extra)

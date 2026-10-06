@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-02 — Cavman can ask before it plans
+
+- When a request is ambiguous in a way that changes what gets built, the planner may return up to three short questions instead of a plan. It may do this once per run. The run then shows **Needs your input** with the questions, and appears under "Waiting for your decision" on the overview. The answer, given on the run page, is stored as a run instruction and continues the build. The planner then gets the questions and answers and must plan, using sensible defaults for anything still open. A second round of questions is refused and the planner retries.
+- The API reports the state `input_needed` and the run detail lists `questions`. Nothing is spent on specialists before the answer.
+
 ## 2026-10-01 — Give a build instructions while it runs
 
 - The run page has *Add an instruction* while a build is executing, and the *Continue* dialog's instruction box now works in workflow mode too (it used to be refused). Instructions are stored beside the run (`run_instructions`, at most 20 a run), listed under the request on the run page, and included in the export through the run detail.

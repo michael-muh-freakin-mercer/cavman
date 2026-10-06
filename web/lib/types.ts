@@ -8,6 +8,7 @@ export type RunState =
   | "recovering"
   | "stopping"
   | "approval_needed"
+  | "input_needed"
   | "waiting"
   | "blocked"
   | "paused"
@@ -236,6 +237,7 @@ export interface RunInstruction {
 export interface RunDetail extends RunSummary {
   objective: string;
   instructions?: RunInstruction[];
+  questions?: string[];
   constraints: string[];
   criteria: string[];
   tasks: TaskView[];

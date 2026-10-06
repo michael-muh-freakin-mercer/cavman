@@ -282,6 +282,8 @@ def scenario_for(objective: str) -> str:
     text = objective.lower()
     if "#approval" in text:
         return "approval"
+    if "#questions" in text:
+        return "questions"
     if "#fail-validation" in text:
         return "fail-validation"
     if "#dependent" in text:
@@ -408,6 +410,12 @@ def build_workflow_scripts(scenario: str, kind: str) -> tuple[list, dict]:
                                                                 "test_cancel.py": CANCEL_TESTS},
                                            "Cancellation written")],
             ("cancel", "reviewer"): [_tool("read_file", {"path": "cancel.py"}, "review-cancel"), review_pass]}
+    if scenario == "questions":
+        if kind == "start":  # the planner asks before planning
+            return [_message(json.dumps({"questions": [
+                "Should clients pay a deposit when they book?", "Which hours is the studio open?"]}))], {}
+        return [_plan([CORE_CRITERION], [(_CORE_PACKET, "developer_sandbox", ["pytest"], [0])])], {
+            ("core", "worker"): _write_code("core", BOOKING_MODULE), ("core", "reviewer"): list(reviewer)}
     if scenario == "approval":
         if kind == "start":
             # The plan under-provisions the task; its specialist asks for a sandbox.

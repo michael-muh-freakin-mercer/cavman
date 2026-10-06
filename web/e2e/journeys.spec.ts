@@ -306,6 +306,20 @@ test("an instruction given while a build runs is shown and reaches the work", as
   await expect(page.getByRole("heading", { name: "Build complete" })).toBeVisible();
 });
 
+test("a build that needs its owner's input asks, and the answer continues it", async ({ page }) => {
+  await signUp(page);
+  const runId = await startBuild(page, "Booking app #questions");
+  const card = page.locator("#questions");
+  await expect(card.getByText("Should clients pay a deposit when they book?")).toBeVisible();
+  await page.goto("/app");
+  await expect(page.getByRole("heading", { name: "Waiting for your decision" })).toBeVisible();
+  await page.goto(`/app/runs/${runId}`);
+  await page.getByLabel("Your answers").fill("No deposit. Open 10:00 to 18:00.");
+  await page.getByRole("button", { name: "Answer and continue" }).click();
+  await expect(page.getByRole("heading", { name: "Build complete" })).toBeVisible();
+  expect((await runJson(page, runId)).instructions[0].text).toBe("No deposit. Open 10:00 to 18:00.");
+});
+
 test("a user changes their email through a confirmation link and signs in with it", async ({ page }) => {
   await signUp(page);
   const newEmail = `moved-${Date.now()}@example.com`;

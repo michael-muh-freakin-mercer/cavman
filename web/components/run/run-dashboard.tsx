@@ -9,6 +9,7 @@ import { RUN_MOOD, RUN_TONE, isExecuting } from "@/lib/run-state";
 import type { ApprovalView, RunDetail } from "@/lib/types";
 import { postJson, useRun } from "@/lib/use-run";
 import { ApprovalCard } from "./approval-card";
+import { QuestionsCard } from "./questions-card";
 import { ArtifactsPanel } from "./artifacts-panel";
 import { ChecksPanel } from "./checks-panel";
 import { CompletionPanel } from "./completion-panel";
@@ -137,6 +138,16 @@ export function RunDashboard({ initial, githubEnabled = false }: { initial: RunD
           ) : null}
           {run.state === "budget_reached" ? <p className="mt-2 text-xs text-muted">Raise the budget below, then continue the run.</p> : null}
         </Notice>
+      ) : null}
+
+      {run.state === "input_needed" && run.questions?.length ? (
+        <QuestionsCard
+          questions={run.questions}
+          onAnswer={async (answer) => {
+            await postJson(`runs/${run.id}/continue`, { message: answer });
+            await refresh();
+          }}
+        />
       ) : null}
 
       {pending.length ? (

@@ -255,9 +255,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         project = platform.project_by_id(project_id)
         return project.name if project else "Project"
 
+    def pending_questions(record: RunRecord, run) -> list[str]:
+        """Questions the planner asked that the run is still waiting on (before any plan exists)."""
+        from walter.adapter import INITIAL_COMPLETION_CRITERION
+
+        if run.status != "active" or run.plan.completion_criteria != [INITIAL_COMPLETION_CRITERION]:
+            return []
+        return list((platform.workflow_state(record.id) or {}).get("questions") or [])
+
+    def with_questions(view: dict, record: RunRecord, run) -> dict:
+        questions = pending_questions(record, run)
+        if questions and view["state"] == "waiting":
+            view.update(state="input_needed", label="Needs your input",
+                        explanation="Cavman has a few questions before it plans this build. Answer them, "
+                                    "and it continues.")
+        return view
+
     def summary(record: RunRecord) -> dict:
         run = engine.load(record.id)
-        return projector.run_summary(run, record, platform.jobs(record.id), project_name(record.project_id))
+        return with_questions(projector.run_summary(run, record, platform.jobs(record.id),
+                                                    project_name(record.project_id)), record, run)
 
     def delivery_view(run_id: str) -> dict | None:
         delivery = platform.delivery(run_id)
@@ -288,7 +305,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         view["publication"] = publication_view(record.id)
         view["instructions"] = [{key: item[key] for key in ("id", "text", "created_at")}
                                 for item in platform.instructions(record.id)]
-        return view
+        view["questions"] = pending_questions(record, run)
+        return with_questions(view, record, run)
 
     @app.exception_handler(importer.RepositoryImportError)
     async def import_refused(_request, exc: importer.RepositoryImportError):
