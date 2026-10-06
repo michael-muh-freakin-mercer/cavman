@@ -252,8 +252,9 @@ def test_developer_sandbox_requires_executable_check_on_initial_plan(kernel):
     core, rid = kernel
     # pytest is the legacy alias of pytest_candidate; the regression scope
     # (2026-09-21 decision) is a distinct named check.
-    # node_test and tsc are the Node toolchain's checks (2026-09-28 decision).
-    assert {"compile", "pytest", "pytest_candidate", "pytest_regression", "node_test", "tsc"} == set(
+    # node_test and tsc are the Node toolchain's checks (2026-09-28 decision); npm_build runs the
+    # project's own build script (2026-10-01).
+    assert {"compile", "pytest", "pytest_candidate", "pytest_regression", "node_test", "tsc", "npm_build"} == set(
         EXECUTABLE_DEVELOPER_CHECKS)
     assert "unittest" not in EXECUTABLE_DEVELOPER_CHECKS
     with pytest.raises(GateError, match="compile or pytest"):

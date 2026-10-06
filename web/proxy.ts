@@ -10,7 +10,7 @@ import { NextResponse, type NextRequest } from "next/server";
  * full destination preserved. The app layout still verifies the session
  * server-side on every request; this check is only a fast path.
  */
-function contentSecurityPolicy(nonce: string): string {
+function contentSecurityPolicy(nonce: string, secure: boolean): string {
   const development = process.env.NODE_ENV !== "production";
   // Cloudflare Turnstile (sign-up CAPTCHA) runs in its own frame and calls home.
   const captcha = process.env.TURNSTILE_SITE_KEY ? " https://challenges.cloudflare.com" : "";
@@ -27,7 +27,10 @@ function contentSecurityPolicy(nonce: string): string {
     "base-uri 'self'",
     "form-action 'self'",
     "frame-ancestors 'none'",
-    ...(development ? [] : ["upgrade-insecure-requests"]),
+    // Only when the page itself came over HTTPS (directly, or through Caddy). On
+    // plain-HTTP localhost, WebKit would upgrade the page's own requests to
+    // https://localhost, which nothing serves; Chromium and Firefox exempt localhost.
+    ...(development || !secure ? [] : ["upgrade-insecure-requests"]),
   ].join("; ");
 }
 
@@ -38,7 +41,8 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(url);
   }
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
-  const policy = contentSecurityPolicy(nonce);
+  const secure = request.nextUrl.protocol === "https:" || request.headers.get("x-forwarded-proto") === "https";
+  const policy = contentSecurityPolicy(nonce, secure);
   const headers = new Headers(request.headers);
   headers.set("x-nonce", nonce);
   headers.set("Content-Security-Policy", policy);

@@ -43,7 +43,7 @@ export function Timeline({ runId, events }: { runId: string; events: TimelineEve
       {shown.length === 0 ? (
         <p className="text-sm text-muted">No activity yet.</p>
       ) : (
-        <ol className="max-h-[32rem] space-y-0 overflow-auto pr-1" aria-live="polite" aria-relevant="additions" aria-label="Activity">
+        <ol tabIndex={0} className="max-h-[32rem] space-y-0 overflow-auto pr-1 focus-visible:outline-2 focus-visible:outline-ink" aria-live="polite" aria-relevant="additions" aria-label="Activity">
           {[...shown].reverse().map((event) => (
             <li key={event.sequence} className="relative flex gap-3 pb-4 pl-1 last:pb-0">
               <span className="mt-1.5"><Dot tone={LEVEL_TONE[event.level]} /></span>

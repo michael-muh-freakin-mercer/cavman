@@ -179,6 +179,24 @@ PY_COMPILE = (
     "for index,path in enumerate(sys.argv[1:])]"
 )
 
+# The project's own build script (`npm run build`). The workspace is mounted
+# read-only, and builds write their output, so the sources are copied to scratch
+# with the read-only node_modules linked in, and npm runs the script there. Its
+# stdio is inherited: the network filter denies the socketpair() a pipe needs.
+# Pre- and post-build hooks are not run (--ignore-scripts still runs the named
+# script). Output is discarded with the scratch directory.
+NPM_BUILD = (
+    "const fs=require('fs'),path=require('path'),{spawnSync}=require('child_process');"
+    "const dir='/tmp/build';"
+    "fs.cpSync('/workspace',dir,{recursive:true,filter:(s)=>s!=='/workspace/node_modules'});"
+    "if(fs.existsSync('/workspace/node_modules'))fs.symlinkSync('/workspace/node_modules',path.join(dir,'node_modules'));"
+    "for(const f of fs.readdirSync(dir,{recursive:true})){const p=path.join(dir,String(f));"
+    "if(!p.startsWith(path.join(dir,'node_modules')))fs.chmodSync(p,fs.statSync(p).isDirectory()?0o755:0o644);}"
+    "const r=spawnSync(process.execPath,['/opt/node/lib/node_modules/npm/bin/npm-cli.js','run','build',"
+    "'--ignore-scripts','--no-update-notifier'],{cwd:dir,stdio:'inherit'});"
+    "if(r.error)console.error(String(r.error));process.exit(r.status===null?1:r.status);"
+)
+
 NETWORK_SYSCALLS = (
     b"socket", b"socketpair", b"connect", b"bind", b"listen", b"accept", b"accept4",
     b"sendto", b"sendmsg", b"sendmmsg", b"recvfrom", b"recvmsg", b"recvmmsg",
@@ -1087,7 +1105,7 @@ class WorkspaceManager:
         rest = argv[1:]
         if category == "isolation_probe" and argv == ["sandbox-probe"]:
             return [python, "-c", ISOLATION_PROBE]
-        if argv[0] in {"node", "tsc"}:
+        if argv[0] in {"node", "tsc", "npm"}:
             if self.node_root is None:
                 raise SandboxUnavailable("Node toolchain unavailable; host fallback prohibited")
             node = "/opt/node/bin/node"
@@ -1096,6 +1114,8 @@ class WorkspaceManager:
                 if not all(_node_test_path(path) and path in inventory for path in rest[1:]):
                     raise SandboxViolation("Node test arguments exceed the manager template")
                 return [node, "--test", _node_isolation_flag(self.node_root), *rest[1:]]
+            if category == "build" and argv == ["npm", "run", "build"]:
+                return [node, "-e", NPM_BUILD]
             if category == "check" and argv == ["tsc"]:
                 return [node, "/workspace/node_modules/typescript/bin/tsc", "--noEmit",
                         "--incremental", "false", "--pretty", "false", "-p", "/workspace"]

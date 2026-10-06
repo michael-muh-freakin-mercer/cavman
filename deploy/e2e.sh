@@ -38,4 +38,5 @@ until curl -fsS -o /dev/null http://localhost:3100/; do
 done
 
 cd "$repo/web"
-CAVMAN_E2E_BASE_URL=http://localhost:3100 npx playwright test "$@"
+# Chromium only: the browser matrix runs in the e2e job against the same web build.
+CAVMAN_E2E_BASE_URL=http://localhost:3100 npx playwright test --project=chromium "$@"

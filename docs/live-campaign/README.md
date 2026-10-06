@@ -6,6 +6,38 @@ A small, budget-capped version runs on demand in CI: Actions → **Live smoke
 Each report lists every request with its final state, tasks, failure classes,
 model calls, provider-reported cost and time.
 
+## 2026-10-02: what the stricter review costs, and which models fit which mode
+
+Live smokes from CI on the two standard requests that cost most and least before (ISO 8601 durations,
+and a JSON todo CLI), with send-back reasons recorded (#47).
+
+| Model | Request | Result | Calls | Cost | Time |
+|---|---|---|---|---|---|
+| deepseek-v4-pro (default) | ISO 8601 | budget reached | n/a | $0.65 | 62 min |
+| deepseek-v4-pro | ISO 8601 | complete | 22 | $0.03 | 7 min |
+| deepseek-v4-pro | todo CLI | complete | n/a | $0.05 | 9 min |
+| deepseek-v4-flash | ISO 8601 | budget reached (150-call cap) | 150 | $0.26 | 49 min |
+| deepseek-v4-flash | todo CLI | complete after a failed test round | 108 | $0.12 | 29 min |
+| claude-sonnet-5.5 | ISO 8601 | blocked after 3 candidates | 86 | $1.63 | 8 min |
+| claude-sonnet-5.5 | todo CLI | complete | 20 | $0.45 | 2 min |
+
+**Why some builds cost 20 times more than others.** The same ISO 8601 request cost $0.03 in one run
+and $0.65 in another. In the Sonnet run, both reviewers ruled every plan item met, and the work was
+still sent back. Trusted code fails a review whose reviewer opened no file (it judged from the diff in
+its input), but it said so only in the evidence, not in the reason the specialist is given. The
+specialist was told "review requested changes" with a reason saying everything was fine, and spent 79
+calls redoing working code. Fixed: a reviewer that reads nothing is asked once more to open the
+files, and if it still does not, the reason says the verdict was discarded because the reviewer read
+nothing.
+
+**Modes.** deepseek-v4-flash is too weak: it hit the call cap and needed extra rounds, so it saves
+nothing. claude-sonnet-5.5 is fast and was clean where review behaved, at about 10 times the
+per-build cost of deepseek-v4-pro. Suggested configuration: Budget and Balanced on deepseek-v4-pro,
+Maximum Quality on claude-sonnet-5.5. Repeat the Sonnet ISO build after the reviewer fix before
+quoting quality numbers.
+
+Live spend on 2026-10-02: $3.18 provider-reported in the runs above, plus the unfinished last builds of two smokes cut off by the job timeout (no report survived; each was capped at $1), and one smoke started by another session.
+
 ## 2026-09-30: live smoke with plan-item review
 
 **Result: 3 of 3 builds completed** ([report](20260930T124540Z.md), [data](20260930T124540Z.json)),

@@ -84,12 +84,41 @@ def test_node_templates_refuse_arbitrary_commands_and_files(manager):
     write(workspaces, grant, "app.test.js", "import 'node:test';\n")
     for category, argv in (("test", ["node", "app.js"]), ("test", ["node", "--test", "app.js"]),
                            ("test", ["node", "--test", "../x.test.js"]), ("test", ["node", "-e", "1"]),
-                           ("check", ["tsc", "--project", "/"]), ("test", ["npm", "test"])):
+                           ("check", ["tsc", "--project", "/"]), ("test", ["npm", "test"]),
+                           ("build", ["npm", "run", "test"]), ("test", ["npm", "run", "build"]),
+                           ("build", ["npm", "run", "build", "--", "x"])):
         with pytest.raises(SandboxViolation):
             workspaces.run_command(grant.id, category, argv, worker_id="author")
     with pytest.raises(SandboxViolation, match="trusted install"):
         workspaces.run_command(grant.id, "test", ["node", "--test", "app.test.js"], worker_id="author",
                                node_modules=Path("/tmp"))
+
+
+def test_project_build_runs_its_script_in_the_jail_without_hooks_or_network(manager):
+    workspaces, grant = manager
+    write(workspaces, grant, "package.json",
+          '{"name": "demo", "private": true, "scripts": {"prebuild": "echo PREBUILD-RAN",'
+          ' "build": "node build.js"}}\n')
+    write(workspaces, grant, "build.js",
+          "const fs = require('fs'); fs.mkdirSync('dist'); fs.writeFileSync('dist/out.txt', 'ok');\n"
+          "console.log('BUILT', fs.readFileSync('dist/out.txt', 'utf8'));\n"
+          "require('net').connect(443, '1.1.1.1').on('error', (e) => console.log('NET', e.code));\n")
+    node_modules = workspaces.node_dependencies(grant.id)
+    result = workspaces.run_command(grant.id, "build", ["npm", "run", "build"], worker_id="author",
+                                    node_modules=node_modules, timeout=120)
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output
+    assert "BUILT ok" in output and "PREBUILD-RAN" not in output
+    assert "NET" not in output or "NET EPERM" in output or "NET EACCES" in output
+    assert "dist/out.txt" not in workspaces.list_files(grant.id)  # build output stays in scratch
+
+
+def test_project_build_reports_a_failing_script(manager):
+    workspaces, grant = manager
+    write(workspaces, grant, "package.json", '{"name": "demo", "private": true, "scripts": {"build": "exit 3"}}\n')
+    result = workspaces.run_command(grant.id, "build", ["npm", "run", "build"], worker_id="author",
+                                    node_modules=workspaces.node_dependencies(grant.id), timeout=120)
+    assert result.returncode != 0
 
 
 def test_no_package_json_means_no_install(manager):

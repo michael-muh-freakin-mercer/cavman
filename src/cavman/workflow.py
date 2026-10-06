@@ -64,7 +64,8 @@ Rules:
   "compile", "pytest" and "pytest_regression" (a code task that depends on another Python code task
   should also use "pytest_regression"). TypeScript/JavaScript code uses "node_test" (tests written with
   node:test in *.test.ts or *.test.js files) and, when the project has a tsconfig.json and typescript as
-  a dependency, "tsc".
+  a dependency, "tsc". When the project has a "build" script in package.json (a bundler, a framework or
+  tsc emitting output), also use "npm_build" so the build itself is proven, not just the tests.
 - Specifications, designs and documents use capability "model_only" with checks ["result_schema"].
 - Executable checks cover Python and Node/TypeScript. Other stacks are delivered as reviewed files.
 - required_inputs may only name earlier task_ids (exactly). Describe any other input (a file, a

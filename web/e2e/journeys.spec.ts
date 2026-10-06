@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { runJson, signUp, startBuild } from "./helpers";
+import { runJson, signUp, startBuild, totp } from "./helpers";
 
 test("journey 1: a landing-page prompt survives sign-up", async ({ page }) => {
   const prompt = "Build me a booking app for a tattoo studio";
@@ -304,4 +304,94 @@ test("an instruction given while a build runs is shown and reaches the work", as
   await page.getByRole("button", { name: "Send" }).click();
   await expect(page.getByRole("list", { name: "Your instructions during the build" })).toContainText("Store times in UTC");
   await expect(page.getByRole("heading", { name: "Build complete" })).toBeVisible();
+});
+
+test("a user changes their email through a confirmation link and signs in with it", async ({ page }) => {
+  await signUp(page);
+  const newEmail = `moved-${Date.now()}@example.com`;
+  await page.goto("/app/settings");
+  await page.getByRole("button", { name: "Change email" }).click();
+  await page.getByLabel("New email").fill(newEmail);
+  await page.getByRole("button", { name: "Send confirmation" }).click();
+  await expect(page.getByRole("status").filter({ hasText: newEmail })).toBeVisible();
+
+  const outbox = readFileSync(join(process.env.CAVMAN_E2E_DIR!, "outbox.jsonl"), "utf8").trim().split("\n")
+    .map((line) => JSON.parse(line) as { to: string; text: string });
+  const link = outbox.reverse().find((item) => item.to === newEmail)!.text.match(/https?:\/\/\S+/)![0];
+  await page.goto(link);
+  await page.waitForURL(/\/app\/settings\?email=changed$/);
+  await expect(page.getByText("Your email address was changed.")).toBeVisible();
+  await expect(page.locator("#main").getByText(newEmail, { exact: true })).toBeVisible();
+
+  const later = await (await page.context().browser()!.newContext()).newPage();
+  await later.goto("/sign-in");
+  await later.getByLabel("Email").fill(newEmail);
+  await later.getByLabel("Password").fill("a-long-enough-password");
+  await later.getByRole("button", { name: "Sign in" }).click();
+  await later.waitForURL(/\/app$/);
+});
+
+test("two-factor sign-in: turn it on, sign in with a code and with a backup code, turn it off", async ({ browser }) => {
+  const page = await browser.newPage();
+  const email = await signUp(page);
+  await page.goto("/app/settings");
+  await page.getByRole("button", { name: "Turn on two-factor" }).click();
+  await page.getByLabel("Your password").fill("a-long-enough-password");
+  await page.getByRole("button", { name: "Turn on", exact: true }).click();
+  const secret = (await page.getByTestId("totp-secret").textContent())!.trim();
+  const backupCodes = await page.getByRole("list", { name: "Backup codes" }).getByRole("listitem").allTextContents();
+  expect(secret).toMatch(/^[A-Z2-7]+=*$/);
+  expect(backupCodes.length).toBeGreaterThanOrEqual(8);
+  await expect(page.getByRole("img", { name: "QR code for your authenticator app" })).toBeVisible();
+  await page.getByLabel("Code from the app, to confirm").fill(totp(secret));
+  await page.getByRole("button", { name: "Confirm and turn on" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Two-factor sign-in is on" })).toBeVisible();
+
+  async function signInUntilChallenge() {
+    const other = await (await browser.newContext()).newPage();
+    await other.goto("/sign-in");
+    await other.getByLabel("Email").fill(email);
+    await other.getByLabel("Password").fill("a-long-enough-password");
+    await other.getByRole("button", { name: "Sign in" }).click();
+    await expect(other.getByLabel("Authentication code")).toBeVisible();
+    // A password alone opens no session.
+    expect((await other.request.get("/api/cavman/runs")).status()).toBe(401);
+    return other;
+  }
+
+  const withCode = await signInUntilChallenge();
+  await withCode.getByLabel("Authentication code").fill("000000");
+  await withCode.getByRole("button", { name: "Verify" }).click();
+  await expect(withCode.getByRole("alert")).toBeVisible();
+  await withCode.getByLabel("Authentication code").fill(totp(secret));
+  await withCode.getByRole("button", { name: "Verify" }).click();
+  await withCode.waitForURL(/\/app$/);
+
+  const withBackup = await signInUntilChallenge();
+  await withBackup.getByRole("button", { name: "Lost your device? Use a backup code" }).click();
+  await withBackup.getByLabel("Backup code").fill(backupCodes[0]);
+  await withBackup.getByRole("button", { name: "Verify" }).click();
+  await withBackup.waitForURL(/\/app$/);
+
+  await page.reload();
+  await page.getByRole("button", { name: "Turn off two-factor" }).click();
+  await page.getByLabel("Your password").fill("a-long-enough-password");
+  await page.getByRole("button", { name: "Turn off", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Two-factor sign-in is off" })).toBeVisible();
+  const plain = await (await browser.newContext()).newPage();
+  await plain.goto("/sign-in");
+  await plain.getByLabel("Email").fill(email);
+  await plain.getByLabel("Password").fill("a-long-enough-password");
+  await plain.getByRole("button", { name: "Sign in" }).click();
+  await plain.waitForURL(/\/app$/);
+});
+
+test("a new account is shown how a build goes, and the docs answer common questions", async ({ page }) => {
+  await signUp(page);
+  await expect(page.getByRole("heading", { name: "How a build goes" })).toBeVisible();
+  await page.getByRole("link", { name: "common questions" }).click();
+  await page.waitForURL(/\/docs#faq$/);
+  await expect(page.getByRole("heading", { name: "Questions" })).toBeVisible();
+  await expect(page.getByText("What does a build cost?")).toBeVisible();
+  await expect(page.getByRole("link", { name: "support@cavman.dev" })).toBeVisible();
 });

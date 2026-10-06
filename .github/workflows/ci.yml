@@ -100,6 +100,62 @@ jobs:
           .venv/bin/python -m pip install pip-audit
           .venv/bin/pip-audit --skip-editable
 
+  next-runner:
+    name: backend suite on Ubuntu 26.04 (advisory)
+    # The rehearsal for moving off ubuntu-24.04 (docs/runbooks/ci-runner-move.md).
+    # Advisory: it never fails the build, and it is not a required check. When it
+    # has been green for a week, move the pinned jobs over in one commit.
+    runs-on: ubuntu-26.04
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install the isolation backend and the system interpreter
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            bubblewrap libseccomp2 util-linux python3-venv
+      - name: Allow unprivileged user namespaces
+        run: |
+          if sysctl -n kernel.apparmor_restrict_unprivileged_userns >/dev/null 2>&1; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+      - name: Report the host layout
+        run: |
+          python3 -VV
+          ls -l /usr/bin/bwrap /usr/bin/prlimit
+          python3 -c "import ctypes; ctypes.CDLL('libseccomp.so.2'); print('libseccomp resolves')"
+          stat -fc %T /sys/fs/cgroup
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Install Cavman
+        run: |
+          python3 -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -e '.[test]'
+      - name: Offline suite
+        run: .venv/bin/python -m pytest -q
+
+  github-live:
+    name: import from the real github.com (advisory)
+    # Every other importer test uses a local stand-in for GitHub; this one uses
+    # github.com itself, so a GitHub outage must not fail the build.
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Cavman
+        run: |
+          python3 -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -e '.[test]'
+      - name: Import public repositories from github.com
+        env:
+          CAVMAN_LIVE_GITHUB: "1"
+          # Raises GitHub's rate limit; the import itself stays public-only.
+          CAVMAN_GITHUB_IMPORT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: .venv/bin/python -m pytest -q tests/test_github_live.py
+
   web:
     name: web (typecheck, lint, unit, build)
     runs-on: ubuntu-24.04
@@ -156,7 +212,7 @@ jobs:
         working-directory: web
         run: |
           npm ci
-          npx playwright install --with-deps chromium
+          npx playwright install --with-deps chromium firefox webkit
       - name: Run journeys
         working-directory: web
         env:
@@ -176,8 +232,8 @@ jobs:
     runs-on: ubuntu-24.04
     needs: [suite, web]
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -197,7 +253,7 @@ jobs:
         env:
           CI: "1"
         run: deploy/e2e.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: deploy-playwright-report
@@ -220,7 +276,7 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U cavman" --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Install age
         run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends age
       - name: Lint the scripts
@@ -239,7 +295,7 @@ jobs:
     # the right labels and credentials, and leaves other containers out.
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Lint the script
         run: shellcheck deploy/logs/*.sh
       - name: Ship logs to a stand-in

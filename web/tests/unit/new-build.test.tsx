@@ -6,6 +6,8 @@ import { NewBuildForm } from "@/components/app/new-build-form";
 
 const push = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
+const linkSocial = vi.fn();
+vi.mock("@/lib/auth-client", () => ({ linkSocial: (...args: unknown[]) => linkSocial(...args) }));
 afterEach(() => vi.unstubAllGlobals());
 
 const props = { initialPrompt: "Add a greeting endpoint", defaultBudget: 5, maxBudget: 100, disabledReason: null };
@@ -15,7 +17,7 @@ describe("NewBuildForm repository import", () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ run_id: "r1" }), { status: 201 }));
     vi.stubGlobal("fetch", fetchMock);
     render(<NewBuildForm {...props} projectId={null} projectName={null} />);
-    await userEvent.type(screen.getByLabelText("Start from a public GitHub repository"), "https://github.com/octo/demo");
+    await userEvent.type(screen.getByLabelText("Start from a GitHub repository"), "https://github.com/octo/demo");
     await userEvent.click(screen.getByRole("button", { name: /Build it/ }));
     await waitFor(() => expect(push).toHaveBeenCalledWith("/app/runs/r1"));
     expect(JSON.parse(fetchMock.mock.calls[0][1].body).settings.repository_url).toBe("https://github.com/octo/demo");
@@ -25,15 +27,39 @@ describe("NewBuildForm repository import", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     render(<NewBuildForm {...props} projectId={null} projectName={null} />);
-    await userEvent.type(screen.getByLabelText("Start from a public GitHub repository"), "https://evil.test/octo/demo");
+    await userEvent.type(screen.getByLabelText("Start from a GitHub repository"), "https://evil.test/octo/demo");
     await userEvent.click(screen.getByRole("button", { name: /Build it/ }));
-    expect(screen.getByRole("alert")).toHaveTextContent("public GitHub repository");
+    expect(screen.getByRole("alert")).toHaveTextContent("GitHub repository address");
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("offers GitHub access when the repository is private, and comes back to the filled-in form", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      detail: "That repository is private. To import it, give Cavman access to your GitHub repositories.",
+      needs_scope: "repo",
+    }), { status: 422 })));
+    render(<NewBuildForm {...props} projectId={null} projectName={null} githubEnabled />);
+    await userEvent.type(screen.getByLabelText("Start from a GitHub repository"), "https://github.com/octo/secret");
+    await userEvent.click(screen.getByRole("button", { name: /Build it/ }));
+    await userEvent.click(await screen.findByRole("button", { name: /Give Cavman access to your GitHub repositories/ }));
+    const [{ scopes, callbackURL }] = linkSocial.mock.calls[0];
+    expect(scopes).toEqual(["repo"]);
+    expect(callbackURL).toBe("/app/new?prompt=Add%20a%20greeting%20endpoint&repository=https%3A%2F%2Fgithub.com%2Focto%2Fsecret");
+  });
+
+  it("does not offer GitHub access when GitHub sign-in is not configured", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      detail: "That repository is private.", needs_scope: "repo" }), { status: 422 })));
+    render(<NewBuildForm {...props} projectId={null} projectName={null} />);
+    await userEvent.type(screen.getByLabelText("Start from a GitHub repository"), "https://github.com/octo/secret");
+    await userEvent.click(screen.getByRole("button", { name: /Build it/ }));
+    await screen.findByRole("alert");
+    expect(screen.queryByRole("button", { name: /Give Cavman access/ })).toBeNull();
   });
 
   it("offers no import for a run in an existing project", () => {
     render(<NewBuildForm {...props} projectId={"a".repeat(32)} projectName="Demo" />);
-    expect(screen.queryByLabelText("Start from a public GitHub repository")).toBeNull();
+    expect(screen.queryByLabelText("Start from a GitHub repository")).toBeNull();
   });
 });
 

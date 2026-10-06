@@ -48,7 +48,7 @@ export function RunControls({
   return (
     <div className="flex flex-col items-start gap-2 sm:items-end">
       <div className="flex flex-wrap gap-2">
-        {executing && run.state !== "stopping" && run.orchestration !== "manager" ? (
+        {executing && run.state !== "stopping" ? (
           <Button variant="secondary" onClick={() => instructDialog.current?.showModal()} disabled={busy !== null}>
             <MessageSquarePlus className="h-4 w-4" aria-hidden="true" /> Add an instruction
           </Button>
@@ -76,19 +76,14 @@ export function RunControls({
           method="dialog"
           onSubmit={async (event) => {
             event.preventDefault();
-            if (await act("continue", () => onContinue(message))) {
-              setMessage("");
-              continueDialog.current?.close();
-            }
+            if (await act("continue", () => onContinue(""))) continueDialog.current?.close();
           }}
         >
           <h2 id="continue-title" className="text-lg font-semibold">Continue this build</h2>
           <p className="mt-1 text-sm text-muted">Cavman picks up from the saved state. Add direction if you like.</p>
           <label className="mt-4 block text-xs text-muted" htmlFor="continue-message">Instruction (optional)</label>
           <textarea id="continue-message" value={message} onChange={(e) => setMessage(e.target.value)} rows={3} maxLength={4000} className="mt-1 w-full rounded-md border-2 border-line-strong bg-surface px-3 py-2 text-sm focus:border-ink focus:outline-none" />
-          {run.orchestration !== "manager" ? (
-            <p className="mt-2 text-xs text-muted">Work that starts from now on follows it. Work already accepted is not redone; ask for changes after the build for that.</p>
-          ) : null}
+          <p className="mt-2 text-xs text-muted">Work that starts from now on follows it. Work already accepted is not redone; ask for changes after the build for that.</p>
           <div className="mt-4 flex justify-end gap-2">
             <Button variant="ghost" onClick={() => continueDialog.current?.close()}>Cancel</Button>
             <Button type="submit" disabled={busy !== null}>{busy === "continue" ? "Starting…" : "Continue"}</Button>

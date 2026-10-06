@@ -2,6 +2,7 @@ import { GitBranch, Plus } from "lucide-react";
 import type { Metadata } from "next";
 import { ApiError } from "@/components/app/api-error";
 import { PageHeader } from "@/components/app/page-header";
+import { Pager, cursorParam } from "@/components/app/pager";
 import { RunList } from "@/components/app/run-list";
 import { ButtonLink } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/panel";
@@ -11,11 +12,15 @@ import type { ProjectView } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Project" };
 
-export default async function ProjectPage({ params }: { params: Promise<{ projectId: string }> }) {
+export default async function ProjectPage({ params, searchParams }: {
+  params: Promise<{ projectId: string }>;
+  searchParams: Promise<{ before?: string }>;
+}) {
   const { projectId } = await params;
   const user = await requireUser(`/app/projects/${projectId}`);
+  const cursor = cursorParam((await searchParams).before);
   const result = /^[0-9a-f]{32}$/.test(projectId)
-    ? await load<ProjectView>(user.id, `projects/${projectId}`)
+    ? await load<ProjectView>(user.id, `projects/${projectId}?limit=25${cursor ? `&${cursor}` : ""}`)
     : ({ ok: false, status: 404, message: "Not found" } as const);
   if (!result.ok) {
     return (
@@ -46,7 +51,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ projec
             <span>· {source.files} files{source.dropped.length ? `, ${source.dropped.length} secret-looking files left out` : ""}</span>
           </p>
         ) : null}
-        {project.runs?.length ? <RunList runs={project.runs} showProject={false} /> : <EmptyState title="No runs in this project" />}
+        {project.runs?.length ? <RunList runs={project.runs} showProject={false} /> : <EmptyState title={cursor ? "No older runs" : "No runs in this project"} />}
+        <Pager path={`/app/projects/${project.id}`} next={project.next ?? null} paged={Boolean(cursor)} />
       </div>
     </>
   );

@@ -24,7 +24,13 @@ def test_campaign_dry_run_writes_a_report(tmp_path):
     summary = json.loads(report.read_text())
     assert summary["requests"] == 2 and summary["completed"] == 2
     assert summary["runs"][1]["failures"] == ["BAD_OUTPUT"]
-    assert "| Request | State |" in (tmp_path / "out" / report.name.replace(".json", ".md")).read_text()
+    assert summary["runs"][0]["sendbacks"] == []
+    [sent_back, *_] = summary["runs"][1]["sendbacks"]
+    assert sent_back["by"] == "check" and sent_back["reason"].endswith("failed")
+    assert summary["runs"][1]["attempts"] >= 2
+    markdown = (tmp_path / "out" / report.name.replace(".json", ".md")).read_text()
+    assert "| Request | State |" in markdown
+    assert "## Why work was sent back" in markdown and "candidate 1, check:" in markdown
 
 
 def test_campaign_refuses_to_start_without_provider_config(tmp_path, monkeypatch):
@@ -99,3 +105,44 @@ def test_campaign_min_completion_exits_nonzero(tmp_path):
         capture_output=True, text=True, timeout=300)
     assert completed.returncode == 1
     assert "Completion 1/2 is below the required 100%" in completed.stderr
+
+
+@pytest.mark.skipif(not Path("/usr/bin/bwrap").exists(), reason="Bubblewrap unavailable")
+def test_report_is_written_after_every_build(tmp_path, monkeypatch):
+    """A job timeout must not lose what earlier builds learned and spent."""
+    campaign = _load_campaign()
+    calls, write = [], campaign.write_report
+
+    def recording(*args, finished, **kwargs):
+        calls.append((len(args[4]), finished))
+        return write(*args, finished=finished, **kwargs)
+
+    monkeypatch.setattr(campaign, "write_report", recording)
+    prompts = tmp_path / "prompts.txt"
+    prompts.write_text("Build a booking core\nBuild a booking core #node\n")
+    assert campaign.main(["--executor", "scripted", "--prompts", str(prompts),
+                          "--out", str(tmp_path / "out"), "--data-dir", str(tmp_path / "data")]) == 0
+    assert calls == [(1, False), (2, False), (2, True)]
+    summary = json.loads(next((tmp_path / "out").glob("*.json")).read_text())
+    assert summary["finished"] is True and summary["planned_requests"] == 2
+
+
+def test_no_build_starts_after_the_deadline(tmp_path):
+    prompts = tmp_path / "prompts.txt"
+    prompts.write_text("Build a booking core\n")
+    assert _load_campaign().main(["--executor", "scripted", "--prompts", str(prompts), "--deadline-minutes", "1e-9",
+                                  "--out", str(tmp_path / "out"), "--data-dir", str(tmp_path / "data")]) == 0
+    [row] = json.loads(next((tmp_path / "out").glob("*.json")).read_text())["runs"]
+    assert row["state"] == "skipped (campaign time limit reached)"
+
+
+@pytest.mark.skipif(not Path("/usr/bin/bwrap").exists(), reason="Bubblewrap unavailable")
+def test_load_test_script_runs_a_small_load(tmp_path):
+    out = tmp_path / "load.json"
+    completed = subprocess.run(
+        [sys.executable, str(REPO / "scripts/load_test.py"), "--users", "2", "--builds-per-user", "1",
+         "--streams-per-run", "1", "--workers", "1", "--worker-concurrency", "2", "--step-delay", "0",
+         "--out", str(out)], capture_output=True, text=True, timeout=300)
+    assert completed.returncode == 0, completed.stdout[-2000:] + completed.stderr[-2000:]
+    report = json.loads(out.read_text())
+    assert report["completed"] == 2 and report["streams"]["errors"] == 0

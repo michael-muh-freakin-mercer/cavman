@@ -12,9 +12,22 @@ export async function register() {
     dsn: process.env.SENTRY_DSN,
     environment: process.env.SENTRY_ENVIRONMENT || "production",
     release: process.env.SENTRY_RELEASE || undefined,
-    sendDefaultPii: false,
+    // Sentry 11 collects every category unless told otherwise; scrubEvent
+    // still runs on whatever is left.
+    dataCollection: {
+      userInfo: false,
+      cookies: false,
+      httpHeaders: { request: { allow: ["user-agent", "content-type", "accept", "host", "referer"] }, response: false },
+      httpBodies: [],
+      urlQueryParams: false,
+      graphQL: { document: false, variables: false },
+      genAI: { inputs: false, outputs: false },
+      databaseQueryData: false,
+      queues: false,
+      stackFrameVariables: false,
+    },
     tracesSampleRate: 0,
-    integrations: [Sentry.httpIntegration({ maxIncomingRequestBodySize: "none" })],
+    integrations: [Sentry.httpIntegration({ maxRequestBodySize: "none" })],
     beforeSend: scrubEvent,
     initialScope: { tags: { component: "web" } },
   });

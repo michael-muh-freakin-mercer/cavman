@@ -1,4 +1,5 @@
 import { expect, type Page } from "@playwright/test";
+import { createHmac } from "node:crypto";
 
 let counter = 0;
 
@@ -25,4 +26,20 @@ export async function runJson(page: Page, runId: string) {
   const response = await page.request.get(`/api/cavman/runs/${runId}`);
   expect(response.status()).toBe(200);
   return response.json();
+}
+
+/** The current 6-digit TOTP code for a base32 secret (RFC 6238, SHA-1, 30 s). */
+export function totp(secret: string, at = Date.now()): string {
+  let bits = "";
+  for (const char of secret.replace(/=+$/, "").toUpperCase()) {
+    // Base32: A-Z are 0-25, 2-7 are 26-31.
+    const value = char >= "A" ? char.charCodeAt(0) - 65 : char.charCodeAt(0) - 24;
+    bits += value.toString(2).padStart(5, "0");
+  }
+  const key = Buffer.from((bits.match(/.{8}/g) ?? []).map((byte) => parseInt(byte, 2)));
+  const counter = Buffer.alloc(8);
+  counter.writeBigUInt64BE(BigInt(Math.floor(at / 30_000)));
+  const digest = createHmac("sha1", key).update(counter).digest();
+  const offset = digest[digest.length - 1] & 0xf;
+  return String((digest.readUInt32BE(offset) & 0x7fffffff) % 1_000_000).padStart(6, "0");
 }

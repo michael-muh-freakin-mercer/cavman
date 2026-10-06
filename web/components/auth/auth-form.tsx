@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useId, useState } from "react";
 import { TurnstileWidget } from "@/components/auth/turnstile";
+import { TwoFactorChallenge } from "@/components/auth/two-factor-challenge";
 import { GithubIcon } from "@/components/brand/github-icon";
 import { signIn, signUp } from "@/lib/auth-client";
 import { safeNext } from "@/lib/prompt-storage";
@@ -32,6 +33,12 @@ export function AuthForm({
   const needsCaptcha = mode === "sign-up" && Boolean(captchaSiteKey);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [captchaRound, setCaptchaRound] = useState(0);
+  const [challenge, setChallenge] = useState(false);
+
+  function finish() {
+    router.push(destination);
+    router.refresh();
+  }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -57,14 +64,19 @@ export function AuthForm({
       setBusy(false);
       return;
     }
+    if (mode === "sign-in" && result.data && "twoFactorRedirect" in result.data && result.data.twoFactorRedirect) {
+      // Password accepted; the account also needs a second factor before a session exists.
+      setChallenge(true);
+      setBusy(false);
+      return;
+    }
     if (mode === "sign-up" && result.data && !("token" in result.data && result.data.token)) {
       // Email verification is required on this server: no session until verified.
       setNotice(`Check ${email} for a link to verify your address, then sign in.`);
       setBusy(false);
       return;
     }
-    router.push(destination);
-    router.refresh();
+    finish();
   }
 
   async function github() {
@@ -73,6 +85,8 @@ export function AuthForm({
   }
 
   const other = mode === "sign-in" ? "/sign-up" : "/sign-in";
+  if (challenge) return <TwoFactorChallenge onDone={finish} />;
+
   const field = "mt-1.5 block h-11 w-full rounded-md border-2 border-line-strong bg-surface px-3 text-fg placeholder:text-faint focus:border-ink focus:outline-none";
 
   return (

@@ -110,7 +110,7 @@ def test_runs_and_projects_are_private_to_their_owner(client):
                  f"/api/runs/{run_id}/delivery/download"):
         assert client.get(path, headers=MALLORY).status_code == 404, path
     assert client.post(f"/api/runs/{run_id}/stop", headers=MALLORY).status_code == 404
-    assert client.get("/api/runs", headers=MALLORY).json() == {"runs": []}
+    assert client.get("/api/runs", headers=MALLORY).json() == {"runs": [], "next": None}
     other = client.post("/api/builds", json={"prompt": "Hijack", "project_id": project_id}, headers=MALLORY)
     assert other.status_code == 404
 
@@ -149,7 +149,7 @@ def test_provider_must_be_configured_before_a_run_exists(tmp_path, monkeypatch):
         response = client.post("/api/builds", json={"prompt": "Build a CLI"}, headers=ALICE)
         assert response.status_code == 503
         assert "not configured" in response.json()["detail"]
-        assert client.get("/api/runs", headers=ALICE).json() == {"runs": []}
+        assert client.get("/api/runs", headers=ALICE).json() == {"runs": [], "next": None}
         system = client.get("/api/system", headers=ALICE).json()
         assert system["provider"]["configured"] is False
         assert "OPENROUTER_API_KEY" not in json.dumps(system).replace("OPENROUTER_API_KEY is not set", "")
@@ -415,30 +415,11 @@ def test_delivery_refuses_an_integration_branch_moved_outside_cavman(client, set
 
 
 @needs_sandbox
-@pytest.mark.parametrize("prompt", ["Booking app", "Booking #parallel", "Booking #approval"])
-def test_manager_orchestration_mode_still_completes(settings, prompt):
-    from dataclasses import replace
-    manager_mode = replace(settings, orchestration="manager")
-    with TestClient(create_app(manager_mode)) as client:
-        run_id = build(client, prompt=prompt)["run_id"]
-        drain(manager_mode)
-        detail = client.get(f"/api/runs/{run_id}", headers=ALICE).json()
-        if detail["state"] == "approval_needed":
-            approval = detail["approvals"][0]
-            client.post(f"/api/runs/{run_id}/approvals/{approval['id']}",
-                        json={"decision": "approve", "scope_digest": approval["scope_digest"]}, headers=ALICE)
-            drain(manager_mode)
-            detail = client.get(f"/api/runs/{run_id}", headers=ALICE).json()
-    assert detail["state"] == "complete" and detail["orchestration"] == "manager"
-    assert detail["usage"]["by_role"]["manager"]["calls"] > 1
-
-
-@needs_sandbox
 def test_workflow_mode_spends_one_planning_call_and_no_manager_calls(client, settings):
     run_id = build(client)["run_id"]
     drain(settings)
     detail = client.get(f"/api/runs/{run_id}", headers=ALICE).json()
-    assert detail["state"] == "complete" and detail["orchestration"] == "workflow"
+    assert detail["state"] == "complete"
     assert detail["usage"]["by_role"]["planner"]["calls"] == 1
     assert "manager" not in detail["usage"]["by_role"]
 
@@ -1029,3 +1010,43 @@ def test_estimate_endpoint_returns_ceiling_and_allowance(client):
     assert body["account"]["remaining_calls"] == body["account"]["max_model_calls"] > 0
     assert body["default_max_model_calls"] > 0
     assert client.get("/api/estimate").status_code == 401
+
+
+def stopped(client, **extra):
+    """Start a build and stop it at once, so the concurrent-build cap never applies."""
+    made = build(client, **extra)
+    assert client.post(f"/api/runs/{made['run_id']}/stop", headers=ALICE).status_code == 202
+    return made
+
+
+def test_run_and_project_lists_are_paged_newest_first(client):
+    made = [stopped(client, prompt=f"Build thing number {n}") for n in range(5)]
+    newest_first = [m["run_id"] for m in reversed(made)]
+    first = client.get("/api/runs?limit=2", headers=ALICE).json()
+    assert [r["id"] for r in first["runs"]] == newest_first[:2] and first["next"]
+    stopped(client, prompt="Build one more thing")  # arrives while paging: shifts nothing
+    second = client.get(f"/api/runs?limit=2&before={first['next']}", headers=ALICE).json()
+    third = client.get(f"/api/runs?limit=2&before={second['next']}", headers=ALICE).json()
+    assert [r["id"] for r in second["runs"] + third["runs"]] == newest_first[2:]
+    assert third["next"] is None
+    assert client.get("/api/runs?limit=0", headers=ALICE).status_code == 422
+    assert client.get("/api/runs?limit=101", headers=ALICE).status_code == 422
+    assert client.get("/api/runs?before=x' OR 1=1", headers=ALICE).status_code == 422
+    assert client.get(f"/api/runs?before={first['next']}", headers=MALLORY).json()["runs"] == []
+
+    projects = client.get("/api/projects?limit=4", headers=ALICE).json()
+    assert len(projects["projects"]) == 4 and projects["next"]
+    rest = client.get(f"/api/projects?limit=4&before={projects['next']}", headers=ALICE).json()
+    assert len(rest["projects"]) == 2 and rest["next"] is None  # five builds and the one more
+    assert all(p["run_count"] == 1 and p["latest_run"] for p in projects["projects"] + rest["projects"])
+
+
+def test_a_project_pages_its_runs_but_counts_them_all(client):
+    first = stopped(client, prompt="Build a ledger")
+    for _ in range(2):
+        stopped(client, prompt="Add a report", project_id=first["project_id"])
+    page = client.get(f"/api/projects/{first['project_id']}?limit=2", headers=ALICE).json()
+    assert page["run_count"] == 3 and len(page["runs"]) == 2 and page["next"]
+    older = client.get(f"/api/projects/{first['project_id']}?limit=2&before={page['next']}", headers=ALICE).json()
+    assert [r["id"] for r in older["runs"]] == [first["run_id"]] and older["next"] is None
+    assert older["latest_run"]["id"] == page["runs"][0]["id"]
