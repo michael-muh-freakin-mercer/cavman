@@ -1,11 +1,13 @@
-"""Start a project from an existing public GitHub repository.
+"""Start a project from an existing GitHub repository: public, or private with the user's own token.
 
 The repository is untrusted input. Trusted platform code (never a model or a
 sandboxed specialist) fetches it once, over HTTPS only, from github.com only:
 
 - the URL must name exactly ``https://github.com/<owner>/<repo>``;
 - GitHub's metadata must say the repository is public and within the size limit
-  before anything is downloaded;
+  before anything is downloaded. A private repository is imported only with the
+  importing user's own GitHub token (never the operator's), which proves the
+  user can read it; the token is used for this download only and never stored;
 - the clone is shallow, single-branch, tagless, without hooks, templates,
   submodules or credentials, and is checked out only after its tree is inspected;
 - symlinks and submodules are refused, and files the sandbox treats as state or
@@ -23,7 +25,7 @@ import shutil
 import subprocess
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from walter.sandbox import _excluded
@@ -43,9 +45,11 @@ _PASSTHROUGH = ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "NO_PR
 class RepositoryImportError(ValueError):
     """The repository cannot be imported; the message is safe to show the user."""
 
-    def __init__(self, message: str, status: int = 422):
+    def __init__(self, message: str, status: int = 422, needs_scope: str | None = None):
         super().__init__(message)
         self.status = status
+        # Set when connecting GitHub with this scope would let the import proceed.
+        self.needs_scope = needs_scope
 
 
 @dataclass(frozen=True)
@@ -69,6 +73,7 @@ class Imported:
     branch: str
     files: int
     dropped: tuple[str, ...]
+    private: bool = False
 
 
 def parse_url(url: str) -> Source:
@@ -78,8 +83,11 @@ def parse_url(url: str) -> Source:
     return Source(match["owner"], match["repo"])
 
 
-def repository_metadata(source: Source, api_url: str, token: str | None = None) -> dict:
-    """Public metadata from GitHub's API; an operator token only raises rate limits."""
+def repository_metadata(source: Source, api_url: str, token: str | None = None, *,
+                        user_token: str | None = None) -> dict:
+    """Metadata from GitHub's API. An operator token only raises rate limits; a
+    user's token also shows the private repositories that user can read."""
+    token = user_token or token
     headers = {"Accept": "application/vnd.github+json", "User-Agent": "cavman-importer",
                "X-GitHub-Api-Version": "2022-11-28"}
     if token:
@@ -90,8 +98,12 @@ def repository_metadata(source: Source, api_url: str, token: str | None = None) 
             return json.loads(response.read() or b"{}")
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
-            raise RepositoryImportError("That repository was not found, or it is private. "
-                               "Cavman can only start from public repositories.", 404) from None
+            if user_token:
+                raise RepositoryImportError("That repository was not found, or your GitHub account cannot "
+                                            "read it.", 404) from None
+            raise RepositoryImportError("That repository was not found, or it is private. To import a private "
+                                        "repository, give Cavman access to your GitHub repositories.", 404,
+                                        needs_scope="repo") from None
         if exc.code == 429 or (exc.code == 403 and exc.headers.get("X-RateLimit-Remaining") == "0"):
             raise RepositoryImportError("GitHub is rate limiting requests right now. Try again in a few minutes.", 503) from None
         raise RepositoryImportError(f"GitHub returned an error ({exc.code}).", 502) from None
@@ -139,7 +151,8 @@ def _tree_size(path: Path) -> int:
 
 
 def import_repository(url: str, repo: Path, name: str, *, api_url: str, max_mb: int, max_files: int,
-                      clone_url: str | None = None, token: str | None = None) -> Imported:
+                      clone_url: str | None = None, token: str | None = None,
+                      user_token: str | None = None) -> Imported:
     """Create ``repo`` as a new project repository holding the kept files of ``url``.
 
     ``repo`` must not exist. On any failure it is removed again.
@@ -147,9 +160,11 @@ def import_repository(url: str, repo: Path, name: str, *, api_url: str, max_mb: 
     if max_mb <= 0:
         raise RepositoryImportError("Starting from an existing repository is disabled on this server.", 403)
     source = parse_url(url)
-    metadata = repository_metadata(source, api_url, token)
-    if metadata.get("private") or metadata.get("visibility", "public") != "public":
-        raise RepositoryImportError("Cavman can only start from public repositories.")
+    metadata = repository_metadata(source, api_url, token, user_token=user_token)
+    private = bool(metadata.get("private")) or metadata.get("visibility", "public") != "public"
+    if private and not user_token:
+        raise RepositoryImportError("That repository is private. To import it, give Cavman access to your "
+                                    "GitHub repositories.", needs_scope="repo")
     size_kb = metadata.get("size")
     if isinstance(size_kb, int) and size_kb > max_mb * 1024:
         raise RepositoryImportError(f"That repository is larger than the {max_mb} MB import limit.")
@@ -160,7 +175,9 @@ def import_repository(url: str, repo: Path, name: str, *, api_url: str, max_mb: 
     if repo.exists():
         raise RepositoryImportError("The project repository already exists.", 409)
     try:
-        return _clone(source, repo, name, branch, clone_url or source.clone_url, max_mb, max_files, token)
+        imported = _clone(source, repo, name, branch, clone_url or source.clone_url, max_mb, max_files,
+                          user_token or token)
+        return replace(imported, private=private)
     except BaseException:
         shutil.rmtree(repo, ignore_errors=True)
         raise

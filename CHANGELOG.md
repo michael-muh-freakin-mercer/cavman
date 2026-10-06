@@ -5,6 +5,27 @@
 - Link previews and the browser tab now say "Cavman — AI builds that have to prove they work", with a description naming who it is for (developers) and what it does best (Python and TypeScript libraries, CLIs and API cores, handed over after real tests and a second review). The dig-site joke stays in the landing page's headline.
 - The last web-app examples are gone: the How it works flow and the landing page's example run now show a Python CLI that renames photos by date, with Python, TypeScript, API, test and docs specialists, and the new-build placeholder models a good, testable request.
 
+## 2026-10-06 — Sentry 11
+
+- `@sentry/nextjs` 10 → 11. Sentry 11 drops `sendDefaultPii` and collects every kind of data by default, now including local variable values in stack frames. The web server turns each category off in `dataCollection` (user, cookies, bodies, query strings, response headers, stack-frame variables and the rest) and keeps only the request headers `scrubEvent` already kept, so reports carry no more than before.
+
+## 2026-10-02 — Manager mode is retired
+
+- Every build now runs the workflow driver, where plain code drives plan, delegate, validate, review and accept, and models only plan, build and review. The original mode, where a Manager model drove each step through tool calls, used far more model calls and was never used on cavman.dev. It is gone, along with its scripted test models, the `--orchestration` flag of the live campaign, `CAVMAN_MANAGER_MAX_TURNS`, and the per-run conversation sessions it kept in local SQLite.
+- `CAVMAN_ORCHESTRATION=manager` now stops the API and worker at startup with a message saying so, instead of quietly running something different. `workflow` is still accepted.
+- Runs and the system view no longer report an `orchestration` field. The Continue dialog no longer has an instruction box. It only appeared in manager mode.
+- Erasing an account still deletes any old manager-mode sessions for its runs.
+
+## 2026-10-06 — source-map-js 1.2.2
+
+- `source-map-js` 1.2.1 → 1.2.2 in the web lockfile for GHSA-68fv-2mgg-jv7q (high: event-loop denial of service from crafted source maps). The advisory appeared after 2026-10-05 and failed `npm audit` in CI on every branch.
+
+## 2026-10-02 — Start from a private GitHub repository
+
+- A new project can start from a private GitHub repository the user can read. The web server reads the user's own GitHub token from the encrypted auth store, only when the account has granted the `repo` scope and the request names a repository. It sends the token to the API in an `X-Cavman-GitHub-Token` header the browser cannot set. The importer uses it for GitHub's metadata and the download, and never stores or logs it.
+- The operator's import token (`CAVMAN_GITHUB_IMPORT_TOKEN`) still only raises rate limits: a private repository is refused unless the importing user's own token is present.
+- When a repository is private, or not found without a token, the API answers with `needs_scope: "repo"`. The New build form then offers "Give Cavman access to your GitHub repositories" and, after GitHub, returns to the form with the request and repository filled in. The project records whether its source was private.
+
 ## 2026-10-01 — Accessibility, phones, Firefox and Safari
 
 - New end-to-end checks (`web/e2e/quality.spec.ts`): every public page, every signed-in page, a run waiting for approval and a completed run are scanned with axe-core for WCAG 2.1 A and AA, and must be no wider than the screen.
