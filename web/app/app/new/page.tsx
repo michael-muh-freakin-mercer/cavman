@@ -1,14 +1,15 @@
 import type { Metadata } from "next";
 import { NewBuildForm } from "@/components/app/new-build-form";
 import { LiveCavman } from "@/components/brand/live-cavman";
+import { githubEnabled } from "@/lib/auth";
 import { load } from "@/lib/load";
 import { requireUser } from "@/lib/session";
 import type { EstimateView, ProjectView, SystemView } from "@/lib/types";
 
 export const metadata: Metadata = { title: "New build" };
 
-export default async function NewBuildPage({ searchParams }: { searchParams: Promise<{ prompt?: string; project?: string }> }) {
-  const { prompt, project } = await searchParams;
+export default async function NewBuildPage({ searchParams }: { searchParams: Promise<{ prompt?: string; project?: string; repository?: string }> }) {
+  const { prompt, project, repository } = await searchParams;
   const user = await requireUser("/app/new");
   const [system, estimate, projectResult] = await Promise.all([
     load<SystemView>(user.id, "system"),
@@ -38,6 +39,8 @@ export default async function NewBuildPage({ searchParams }: { searchParams: Pro
           disabledReason={disabledReason}
           modes={system.ok ? system.data.model_modes.filter((m) => m.available).map((m) => m.mode) : ["automatic"]}
           estimate={estimate.ok ? estimate.data : null}
+          githubEnabled={githubEnabled}
+          initialRepository={(repository ?? "").slice(0, 300)}
         />
       </div>
     </div>

@@ -93,7 +93,7 @@ Approvals on record: live-model campaign spend up to **$50** (OpenRouter); misc 
 ### 12. GitHub
 - [ ] 🤖 Publish flow end to end against github.com, including the scope upgrade (tested against a stand-in only)
 - [x] 🤖 Import a real public repository (`tests/test_github_live.py` imports octocat/Hello-World from github.com through the API; an advisory CI job runs it on every push)
-- [ ] 🤖 Private repository import with the user's token
+- [x] 🤖 Private repository import with the user's token (only the importing user's own token, with the `repo` scope, can import a private repository; the operator token never can; the token is used for the download only)
 - [ ] 🤖 Push updates to an existing repository as a pull request
 
 ### 13. Safe previews of built web apps

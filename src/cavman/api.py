@@ -34,7 +34,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from walter.orchestration import GateError
 
-from . import __version__
+from . import __version__, importer
 from .config import EXECUTOR_PROVIDER, Settings
 from .accounts import account_disk_bytes, account_usage, cost_history, server_usage
 from .delivery import deliver_run
@@ -164,6 +164,8 @@ def principal(request: Request, authorization: Annotated[str | None, Header()] =
 
 
 User = Annotated[str, Depends(principal)]
+# The importing user's GitHub token, set only by the web server from its auth store.
+GitHubToken = Annotated[str | None, Header(max_length=500)]
 
 # Lists are paged newest first. A cursor is the URL-safe base64 of
 # "<created_at>~<id>" of the last item shown; keyset paging stays correct while
@@ -257,6 +259,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                     project_name(record.project_id), delivery_view(record.id))
         view["publication"] = publication_view(record.id)
         return view
+
+    @app.exception_handler(importer.RepositoryImportError)
+    async def import_refused(_request, exc: importer.RepositoryImportError):
+        return JSONResponse({"detail": str(exc), "needs_scope": exc.needs_scope}, status_code=exc.status)
 
     @app.exception_handler(GateError)
     async def gate_error(_request, exc: GateError):
@@ -427,7 +433,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Builds -----------------------------------------------------------
 
     @app.post("/api/builds", status_code=201)
-    def create_build(body: BuildRequest, user: User):
+    def create_build(body: BuildRequest, user: User, x_cavman_github_token: GitHubToken = None):
         if settings.executor == EXECUTOR_PROVIDER:
             status = _provider_status()
             if not status["configured"]:
@@ -456,7 +462,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         else:
             name = (body.name or "").strip() or project_name_from_prompt(body.prompt)
             project_id = new_id()
-            source = new_project_repo(project_id, name, body.prompt, repository_url)
+            source = new_project_repo(project_id, name, body.prompt, repository_url, x_cavman_github_token)
             try:
                 project = platform.create_project(user, name, body.prompt,
                                                   {**body.settings.model_dump(exclude_none=True), **source},
@@ -473,26 +479,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # Projects ---------------------------------------------------------
 
-    def new_project_repo(project_id: str, name: str, description: str, repository_url: str | None) -> dict:
-        """Create the project repository, empty or from a public GitHub repository."""
+    def new_project_repo(project_id: str, name: str, description: str, repository_url: str | None,
+                         user_token: str | None = None) -> dict:
+        """Create the project repository, empty or from a GitHub repository.
+
+        ``user_token`` is the user's own GitHub token, attached by the web server
+        (never the browser) when the account has granted repository access. It
+        is used for this one download and not stored."""
         if not repository_url:
             engine.init_project_repo(project_id, name, description)
             return {}
-        from . import importer
         try:
             imported = importer.import_repository(
                 repository_url, engine.project_repo(project_id), name, api_url=settings.github_api_url,
                 max_mb=settings.import_max_mb, max_files=settings.import_max_files,
-                token=settings.github_import_token)
-        except importer.RepositoryImportError as exc:
-            shutil.rmtree(engine.project_repo(project_id).parent, ignore_errors=True)
-            raise HTTPException(exc.status, str(exc)) from None
+                token=settings.github_import_token, user_token=user_token)
         except Exception:
             shutil.rmtree(engine.project_repo(project_id).parent, ignore_errors=True)
             raise
         return {"repository_url": imported.url,
                 "source": {"url": imported.url, "commit": imported.commit, "branch": imported.branch,
-                           "files": imported.files, "dropped": list(imported.dropped)}}
+                           "files": imported.files, "dropped": list(imported.dropped),
+                           "private": imported.private}}
 
     def project_view(project, runs: list[RunRecord]) -> dict:
         summaries = [summary(r) for r in runs]
@@ -514,7 +522,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"projects": items, "next": next_cursor(projects, limit)}
 
     @app.post("/api/projects", status_code=201)
-    def create_project(body: ProjectRequest, user: User):
+    def create_project(body: ProjectRequest, user: User, x_cavman_github_token: GitHubToken = None):
         if platform.project_count(user) >= settings.max_projects:
             raise HTTPException(403, f"You have reached the limit of {settings.max_projects} projects.")
         act(user)
@@ -523,7 +531,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             rate_limit(user, "import", settings.imports_per_hour, 3600, "repository imports per hour")
         project_id = new_id()
         source = new_project_repo(project_id, body.name.strip(), body.description,
-                                  (body.repository_url or "").strip() or None)
+                                  (body.repository_url or "").strip() or None, x_cavman_github_token)
         try:
             project = platform.create_project(user, body.name.strip(), body.description, source,
                                               project_id=project_id)

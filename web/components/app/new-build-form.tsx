@@ -4,8 +4,10 @@ import { ArrowRight, ChevronDown, LoaderCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useState } from "react";
 import { CostEstimate } from "@/components/app/cost-estimate";
+import { GithubIcon } from "@/components/brand/github-icon";
 import { announceTyping } from "@/components/brand/live-cavman";
-import { MAX_PROMPT_LENGTH, takePendingPrompt } from "@/lib/prompt-storage";
+import { linkSocial } from "@/lib/auth-client";
+import { MAX_PROMPT_LENGTH, newBuildPath, takePendingPrompt } from "@/lib/prompt-storage";
 import { unverifiedStacks } from "@/lib/stack-support";
 import type { EstimateView } from "@/lib/types";
 import { useHydrated } from "@/lib/use-hydrated";
@@ -28,6 +30,8 @@ export function NewBuildForm({
   disabledReason,
   modes = ["automatic"],
   estimate = null,
+  githubEnabled = false,
+  initialRepository = "",
 }: {
   initialPrompt: string;
   projectId: string | null;
@@ -37,6 +41,8 @@ export function NewBuildForm({
   disabledReason: string | null;
   modes?: string[];
   estimate?: EstimateView | null;
+  githubEnabled?: boolean;
+  initialRepository?: string;
 }) {
   const router = useRouter();
   const hydrated = useHydrated();
@@ -46,7 +52,8 @@ export function NewBuildForm({
   const [target, setTarget] = useState("");
   const [budget, setBudget] = useState(String(defaultBudget));
   const [mode, setMode] = useState("automatic");
-  const [repository, setRepository] = useState("");
+  const [repository, setRepository] = useState(initialRepository);
+  const [needsScope, setNeedsScope] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const ids = { prompt: useId(), stack: useId(), constraints: useId(), target: useId(), budget: useId(), mode: useId(), repository: useId(), error: useId() };
@@ -66,11 +73,12 @@ export function NewBuildForm({
       return;
     }
     if (repository.trim() && !GITHUB_REPOSITORY.test(repository.trim())) {
-      setError("Use a public GitHub repository address like https://github.com/owner/repo.");
+      setError("Use a GitHub repository address like https://github.com/owner/repo.");
       return;
     }
     setBusy(true);
     setError(null);
+    setNeedsScope(null);
     try {
       const response = await fetch("/api/cavman/builds", {
         method: "POST",
@@ -89,6 +97,7 @@ export function NewBuildForm({
         }),
       });
       const body = await response.json().catch(() => ({}));
+      if (!response.ok && body.needs_scope && githubEnabled) setNeedsScope(body.needs_scope);
       if (!response.ok) {
         const detail = Array.isArray(body.detail) ? "Check the advanced settings." : body.detail;
         throw new Error(typeof detail === "string" ? detail : "Cavman could not start this build.");
@@ -140,7 +149,7 @@ export function NewBuildForm({
         </p>
       ) : null}
 
-      <details className="group mt-4 rounded-xl border border-line bg-surface/60">
+      <details open={Boolean(initialRepository) || undefined} className="group mt-4 rounded-xl border border-line bg-surface/60">
         <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm text-fg-soft hover:text-fg">
           Advanced settings (optional)
           <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" aria-hidden="true" />
@@ -172,7 +181,7 @@ export function NewBuildForm({
           </div>
           {projectId ? null : (
             <div className="sm:col-span-2">
-              <label htmlFor={ids.repository} className="text-xs text-muted">Start from a public GitHub repository</label>
+              <label htmlFor={ids.repository} className="text-xs text-muted">Start from a GitHub repository</label>
               <input id={ids.repository} type="url" inputMode="url" value={repository} onChange={(e) => setRepository(e.target.value)} maxLength={300} placeholder="https://github.com/owner/repo" className={`${input} h-10`} />
               <p className="mt-1.5 text-xs text-faint">
                 Cavman copies the default branch&rsquo;s files (not its history) into a new project. Symlinks and submodules are refused; secret-looking files are left out.
@@ -193,6 +202,20 @@ export function NewBuildForm({
       ) : null}
       {error ? (
         <p id={ids.error} role="alert" className="mt-4 text-sm text-bad">{error}</p>
+      ) : null}
+      {needsScope ? (
+        <button
+          type="button"
+          onClick={() => linkSocial({
+            provider: "github",
+            scopes: [needsScope],
+            // Back to this form with the request and repository filled in.
+            callbackURL: `${newBuildPath(prompt)}&repository=${encodeURIComponent(repository.trim())}`,
+          })}
+          className="mt-3 inline-flex h-10 items-center gap-2 rounded-lg border border-line-strong bg-surface-2 px-4 text-sm font-medium text-fg hover:bg-surface-3"
+        >
+          <GithubIcon /> Give Cavman access to your GitHub repositories
+        </button>
       ) : null}
       <div className="mt-6 flex items-center justify-end gap-3">
         <p className="hidden text-xs text-muted sm:block">You can close this tab — the build keeps going.</p>
