@@ -328,7 +328,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             modes.append({"mode": mode, "available": mode in configured,
                           "manager_model": manager, "worker_model": worker})
         return {"version": __version__, "executor": settings.executor, "model_modes": modes,
-                "orchestration": settings.orchestration, "provider": provider,
+                "provider": provider,
                 "sandbox": _sandbox_status(settings.sandbox_backend),
                 "budget": {"default_usd": settings.default_budget_usd, "max_usd": settings.max_budget_usd,
                            "account_monthly_usd": settings.account_monthly_budget_usd,
@@ -668,7 +668,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(409, "This run has finished; start a new build instead.")
         if settings.executor == EXECUTOR_PROVIDER and not _provider_status()["configured"]:
             raise HTTPException(503, "Cavman's model provider is not configured on the server.")
-        if body.message.strip() and settings.orchestration != "manager":
+        if body.message.strip():
             raise HTTPException(422, "Follow-up instructions are not supported by this server yet. "
                                      "Continue without an instruction, or start a new build.")
         require_account_allowance(user)

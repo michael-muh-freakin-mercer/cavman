@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-02 — Manager mode is retired
+
+- Every build now runs the workflow driver, where plain code drives plan, delegate, validate, review and accept, and models only plan, build and review. The original mode, where a Manager model drove each step through tool calls, used far more model calls and was never used on cavman.dev. It is gone, along with its scripted test models, the `--orchestration` flag of the live campaign, `CAVMAN_MANAGER_MAX_TURNS`, and the per-run conversation sessions it kept in local SQLite.
+- `CAVMAN_ORCHESTRATION=manager` now stops the API and worker at startup with a message saying so, instead of quietly running something different. `workflow` is still accepted.
+- Runs and the system view no longer report an `orchestration` field. The Continue dialog no longer has an instruction box. It only appeared in manager mode.
+- Erasing an account still deletes any old manager-mode sessions for its runs.
+
 ## 2026-10-06 — source-map-js 1.2.2
 
 - `source-map-js` 1.2.1 → 1.2.2 in the web lockfile for GHSA-68fv-2mgg-jv7q (high: event-loop denial of service from crafted source maps). The advisory appeared after 2026-10-05 and failed `npm audit` in CI on every branch.

@@ -21,7 +21,6 @@ export function RunControls({
   const [error, setError] = useState<string | null>(null);
   const continueDialog = useRef<HTMLDialogElement>(null);
   const closeDialog = useRef<HTMLDialogElement>(null);
-  const [message, setMessage] = useState("");
   const [reason, setReason] = useState("");
   const executing = isExecuting(run.state);
 
@@ -67,22 +66,11 @@ export function RunControls({
           method="dialog"
           onSubmit={async (event) => {
             event.preventDefault();
-            if (await act("continue", () => onContinue(message))) {
-              setMessage("");
-              continueDialog.current?.close();
-            }
+            if (await act("continue", () => onContinue(""))) continueDialog.current?.close();
           }}
         >
           <h2 id="continue-title" className="text-lg font-semibold">Continue this build</h2>
-          {run.orchestration === "manager" ? (
-            <>
-              <p className="mt-1 text-sm text-muted">Cavman picks up from the saved state. Add direction if you like.</p>
-              <label className="mt-4 block text-xs text-muted" htmlFor="continue-message">Instruction (optional)</label>
-              <textarea id="continue-message" value={message} onChange={(e) => setMessage(e.target.value)} rows={3} maxLength={4000} className="mt-1 w-full rounded-md border-2 border-line-strong bg-surface px-3 py-2 text-sm focus:border-ink focus:outline-none" />
-            </>
-          ) : (
-            <p className="mt-1 text-sm text-muted">Cavman picks up exactly where it stopped, from the saved state.</p>
-          )}
+          <p className="mt-1 text-sm text-muted">Cavman picks up exactly where it stopped, from the saved state.</p>
           <div className="mt-4 flex justify-end gap-2">
             <Button variant="ghost" onClick={() => continueDialog.current?.close()}>Cancel</Button>
             <Button type="submit" disabled={busy !== null}>{busy === "continue" ? "Starting…" : "Continue"}</Button>
