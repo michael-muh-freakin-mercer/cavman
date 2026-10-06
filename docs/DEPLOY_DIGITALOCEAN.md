@@ -294,3 +294,4 @@ It ends with `== drill passed for <timestamp>`. A real restore follows
 | `TURNSTILE_*` | `web/.env.local` | — |
 | `SENTRY_DSN` | `.env` and `web/.env.local` | — |
 | `GRAFANA_LOKI_TOKEN` | `.env` | — |
+| `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` | `.env` | — |

@@ -309,6 +309,8 @@ export interface SystemView {
 
 export interface AccountSpending {
   period_start: string;
+  plan_usd: number;
+  credit_usd: number;
   spent_usd: number;
   limit_usd: number;
   remaining_usd: number;
@@ -319,6 +321,20 @@ export interface AccountSpending {
   cost_complete: boolean;
   exhausted: boolean;
   warning: boolean;
+}
+
+export interface BillingView {
+  enabled: boolean;
+  plan: "free" | "builder";
+  status: string | null;
+  period_end: string | null;
+  cancel_at_period_end: boolean;
+  monthly_usage_usd: number;
+  credit_usd: number;
+  has_customer: boolean;
+  trial_days: number;
+  builder: { price_usd: number; usage_usd: number };
+  topup: { price_usd: number; usage_usd: number };
 }
 
 export interface ModeCostHistory {

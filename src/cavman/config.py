@@ -133,6 +133,21 @@ class Settings:
     # e2b (a fresh E2B microVM per check; the worker needs E2B_API_KEY).
     sandbox_backend: str = SANDBOX_BUBBLEWRAP
     e2b_template: str = "cavman-sandbox"
+    # Paid plans through Stripe (billing.py), off unless both Stripe secrets are
+    # set. Free accounts keep account_monthly_budget_usd; Builder accounts get
+    # builder_usage_usd a month; each top-up adds topup_usage_usd of credit that
+    # does not expire. A first Builder subscription starts with a free trial of
+    # billing_trial_days (0: none).
+    stripe_secret_key: str | None = None
+    stripe_webhook_secret: str | None = None
+    public_url: str = "http://localhost:3000"
+    builder_usage_usd: float = 12.0
+    topup_usage_usd: float = 6.0
+    billing_trial_days: int = 30
+
+    @property
+    def billing_enabled(self) -> bool:
+        return bool(self.stripe_secret_key and self.stripe_webhook_secret)
 
     @property
     def operations_db(self) -> Path:
@@ -219,6 +234,9 @@ class Settings:
         max_budget = _float(values, "CAVMAN_MAX_BUDGET_USD", 100.0, minimum=0.01)
         if default_budget > max_budget:
             raise SettingsError("CAVMAN_DEFAULT_BUDGET_USD cannot exceed CAVMAN_MAX_BUDGET_USD.")
+        public_url = (values.get("CAVMAN_PUBLIC_URL") or "http://localhost:3000").strip().rstrip("/")
+        if not re.fullmatch(r"https?://[A-Za-z0-9.-]+(:\d+)?", public_url):
+            raise SettingsError("CAVMAN_PUBLIC_URL must be the site's origin, such as https://cavman.dev.")
         return cls(
             data_dir=data_dir,
             api_token=token,
@@ -253,6 +271,12 @@ class Settings:
             scripted_step_delay=_float(values, "CAVMAN_SCRIPTED_STEP_DELAY", 0.25),
             sandbox_backend=sandbox_backend,
             e2b_template=e2b_template,
+            stripe_secret_key=(values.get("STRIPE_SECRET_KEY") or "").strip() or None,
+            stripe_webhook_secret=(values.get("STRIPE_WEBHOOK_SECRET") or "").strip() or None,
+            public_url=public_url,
+            builder_usage_usd=_float(values, "CAVMAN_BUILDER_USAGE_USD", 12.0, minimum=0.01),
+            topup_usage_usd=_float(values, "CAVMAN_TOPUP_USAGE_USD", 6.0, minimum=0.01),
+            billing_trial_days=_int(values, "CAVMAN_BILLING_TRIAL_DAYS", 30, minimum=0),
         )
 
     def ensure_directories(self) -> None:

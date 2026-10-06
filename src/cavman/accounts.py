@@ -11,13 +11,15 @@ from datetime import datetime, timedelta, timezone
 
 from walter.usage import usage_cost
 
+from .billing import available_credit, monthly_plan_usd
+
 
 def month_start(now: datetime | None = None) -> str:
     now = now or datetime.now(timezone.utc)
     return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
 
 
-def _usage_since(engine, records, since: str) -> tuple[float, int, int]:
+def _usage_since(engine, records, since: str, until: str | None = None) -> tuple[float, int, int]:
     """Provider-reported cost, model calls, and calls without a reported cost."""
     cost, calls, unknown = 0.0, 0, 0
     for record in records:
@@ -26,7 +28,7 @@ def _usage_since(engine, records, since: str) -> tuple[float, int, int]:
         except Exception:
             continue
         for usage in run.usage_records:
-            if usage.created_at < since:
+            if usage.created_at < since or (until is not None and usage.created_at >= until):
                 continue
             calls += 1
             reported = usage_cost(usage.raw_usage)
@@ -50,12 +52,23 @@ def server_usage(engine, platform, *, now: datetime | None = None) -> dict:
 
 
 def account_usage(engine, platform, settings, owner_id: str, *, now: datetime | None = None) -> dict:
+    """This month's spending against the account's limit: its plan's monthly
+    allowance plus any bought usage credit left (see billing.py)."""
+    now = now or datetime.now(timezone.utc)
     since = month_start(now)
-    cost, calls, unknown = _usage_since(engine, platform.list_runs(owner_id), since)
-    limit_usd = settings.account_monthly_budget_usd
-    limit_calls = settings.account_monthly_max_calls
+    records = platform.list_runs(owner_id)
+    cost, calls, unknown = _usage_since(engine, records, since)
+    plan_usd = monthly_plan_usd(settings, platform, owner_id, now)
+    credit_usd = available_credit(settings, platform, owner_id, now,
+                                  lambda start, end: _usage_since(engine, records, start, end)[0])
+    limit_usd = round(plan_usd + credit_usd, 6)
+    # The call cap grows with what the account may spend.
+    limit_calls = max(settings.account_monthly_max_calls,
+                      round(settings.account_monthly_max_calls * limit_usd / settings.account_monthly_budget_usd))
     return {
         "period_start": since,
+        "plan_usd": plan_usd,
+        "credit_usd": round(credit_usd, 6),
         "spent_usd": round(cost, 6),
         "limit_usd": limit_usd,
         "remaining_usd": max(0.0, round(limit_usd - cost, 6)),
