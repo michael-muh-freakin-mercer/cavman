@@ -13,7 +13,7 @@ import { apiBase, serviceHeaders } from "@/lib/cavman";
  */
 export const dynamic = "force-dynamic";
 
-const ALLOWED = /^(system|builds|projects(\/[0-9a-f]{32})?|runs(\/[0-9a-f]{32}(\/(events|stream|continue|instructions|stop|abandon|budget|delivery(\/download)?|tasks\/[A-Za-z0-9_.:-]{1,128}|artifacts\/[0-9a-f]{32}|approvals\/[0-9a-f]{32}))?)?)$/;
+const ALLOWED = /^(system|builds|billing\/(checkout|portal)|projects(\/[0-9a-f]{32})?|runs(\/[0-9a-f]{32}(\/(events|stream|continue|instructions|stop|abandon|budget|delivery(\/download)?|tasks\/[A-Za-z0-9_.:-]{1,128}|artifacts\/[0-9a-f]{32}|approvals\/[0-9a-f]{32}))?)?)$/;
 
 /**
  * The user's own GitHub token, when a new project starts from a repository and
