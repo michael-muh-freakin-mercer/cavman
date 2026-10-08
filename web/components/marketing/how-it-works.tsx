@@ -110,8 +110,8 @@ export function HowItWorks({ signedIn }: { signedIn: boolean }) {
             <Down />
             <FlowNode icon={Rocket} title="Verified Project" caption="Accepted, tested, reviewed — ready to download" accent />
             <figcaption className="sr-only">
-              User Prompt, then Cavman, then a dynamic set of specialists such as product, frontend, backend, QA and
-              DevOps, then a verified project.
+              User Prompt, then Cavman, then a dynamic set of specialists such as Python, TypeScript, API, test and
+              docs, then a verified project.
             </figcaption>
           </figure>
         </div>

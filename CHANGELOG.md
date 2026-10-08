@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-08 — Docs catch up with the product
+
+- The public Docs page no longer says only public repositories can be imported or that publishing always creates a new repository. It now describes private imports, pull requests on published projects, clarifying questions, mid-run instructions and build emails.
+- The How it works diagram's screen-reader caption names the same specialists the diagram shows.
+
 ## 2026-10-02 — Later builds open pull requests
 
 - Once a project has been published to GitHub, a later build in that project can open a pull request on that repository instead of creating another one. Cavman pushes the build's verified commit to a new `cavman/<run>` branch, never forced, and opens a pull request against the default branch, with the request and result in its description. The default branch changes only if the user merges it.

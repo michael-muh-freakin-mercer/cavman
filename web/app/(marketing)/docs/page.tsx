@@ -17,7 +17,7 @@ const SECTIONS = [
     id: "repository",
     title: "Start from a repository",
     body: [
-      "To work on existing code, paste a public GitHub repository address under the build's optional settings. Cavman imports a snapshot of it into a new project (files that look like secrets are left out), and the build starts from that code.",
+      "To work on existing code, paste a GitHub repository address under the build's optional settings. Cavman imports a snapshot of it into a new project (files that look like secrets are left out), and the build starts from that code. Private repositories work too when the server has GitHub sign-in: Cavman offers to ask GitHub for access to your repositories, and uses your token only for that download.",
     ],
   },
   {
@@ -26,6 +26,7 @@ const SECTIONS = [
     body: [
       "The run dashboard shows real state from the orchestration core: the current stage, each task and its specialist, attempts, dependencies, trusted check results, reviews, failures and recoveries, approvals, model usage and cost.",
       "Task states: Waiting, Ready, Running, Validating, Reviewing, Revision Needed, Needs Approval, Blocked, Failed, Accepted.",
+      "If a request is ambiguous, Cavman may ask up to three questions before it plans; the run shows Needs your input until you answer. While a build runs you can add an instruction, and later work follows it. Cavman emails you when a build finishes or needs you; turn that off in Settings.",
     ],
   },
   {
@@ -57,14 +58,14 @@ const SECTIONS = [
     body: [
       "When a run completes, Cavman assembles an archive from exactly the accepted, fingerprint-verified files plus a build report. Nothing is pushed or deployed on your behalf.",
       "To change a delivered project, use Ask for changes on the completed run. The new run starts from the delivered code, in the same project.",
-      "If the server has GitHub sign-in, you can also publish a completed project to a new GitHub repository. Cavman asks for repository access at that moment, and pushes only after you confirm the exact name and visibility.",
+      "If the server has GitHub sign-in, you can also publish a completed project to a new GitHub repository. Cavman asks for repository access at that moment, and pushes only after you confirm the exact name and visibility. Once a project is published, a later build in it can open a pull request on that repository instead; the default branch changes only if you merge it.",
     ],
   },
   {
     id: "limits",
     title: "Current limitations",
     body: [
-      "Live previews of generated apps are not available yet; Cavman will not render untrusted code on its own origin. Only public GitHub repositories can be imported, and publishing creates a new repository rather than updating one. Sandboxed execution supports Python and Node/TypeScript; a project's own build script runs too, but dev servers do not. OpenRouter is the only configured model provider.",
+      "Live previews of generated apps are not available yet; Cavman will not render untrusted code on its own origin. Sandboxed execution supports Python and Node/TypeScript; a project's own build script runs too, but dev servers do not. OpenRouter is the only configured model provider.",
     ],
   },
 ];
