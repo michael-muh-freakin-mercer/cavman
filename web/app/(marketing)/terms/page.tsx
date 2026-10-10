@@ -9,7 +9,7 @@ const SECTIONS: LegalSection[] = [
     id: "agreement",
     title: "The agreement",
     body: [
-      `These terms are an agreement between you and ${OPERATOR} ("we"), who operates the hosted Cavman service at cavman.dev. By creating an account or using the service you accept these terms, the Privacy Policy and the Acceptable Use Policy. If you do not accept them, do not use the service.`,
+      `These terms are an agreement between you and ${OPERATOR} ("we"), which operates the hosted Cavman service at cavman.dev. By creating an account or using the service you accept these terms, the Privacy Policy and the Acceptable Use Policy. If you do not accept them, do not use the service.`,
       `You must be at least ${MINIMUM_AGE} years old. If you use Cavman for an organization, you confirm you may accept these terms on its behalf.`,
     ],
   },

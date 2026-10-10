@@ -52,6 +52,7 @@ Approvals on record: live-model campaign spend up to **$50** (OpenRouter); misc 
 - [x] 🧑👥 List of third parties processing user data (OpenRouter and model providers, email, hosting): listed in the privacy policy (signed off by the owner 2026-09-30; not reviewed by a lawyer)
 - [x] 🧑👥 Data retention policy, cookie notice, minimum age: in the privacy policy and terms; minimum age 18 (signed off by the owner 2026-09-30; not reviewed by a lawyer)
 - [x] 🤖 Pages and links in the app (data export and account deletion already exist): live at `/terms`, `/privacy`, `/acceptable-use`; owner facts in `web/lib/legal.ts`
+- [ ] 🧑 Operator is OddAnvil Works LLC (parent company, Cavman as an assumed name; owner's direction 2026-10-10; `OPERATOR` in `web/lib/legal.ts`). Before deploying: file a Kentucky Certificate of Assumed Name for "Cavman" with the Secretary of State (KRS 365.015) and email existing users about the changed terms, as the privacy policy promises
 
 ### 7. Abuse and tenancy limits
 - [x] 🤖 Per-user rate limits on starting builds, imports and continuations (only sign-in is rate limited today)
