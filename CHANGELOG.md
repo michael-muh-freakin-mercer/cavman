@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-11 — Privacy policy covers a pause
+
+- The privacy policy now says what happens to data while Cavman is paused: the service is off, one encrypted backup is kept until it resumes and deleted within 30 days of resuming (or straight away if Cavman closes), and anyone can email to get a copy of their data or have it deleted from that backup. The legal pages' "Last updated" date is October 11, 2026.
+
 ## 2026-10-02 — Later builds open pull requests
 
 - Once a project has been published to GitHub, a later build in that project can open a pull request on that repository instead of creating another one. Cavman pushes the build's verified commit to a new `cavman/<run>` branch, never forced, and opens a pull request against the default branch, with the request and result in its description. The default branch changes only if the user merges it.

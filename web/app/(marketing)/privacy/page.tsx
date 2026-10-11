@@ -52,6 +52,7 @@ const SECTIONS: LegalSection[] = [
     title: "How long we keep it",
     body: [
       "Your account, projects, builds and deliveries are kept until you delete them or your account. Temporary build workspaces and dependency caches are cleaned up automatically after a build finishes. Server logs are rotated automatically and capped in size, so older entries are deleted as new ones arrive; the copy held by Grafana Cloud is deleted after at most 30 days. Backups are kept for up to 30 days.",
+      "While Cavman is paused, the service is switched off and you cannot sign in. During a pause we keep one encrypted backup of the service, held in DigitalOcean storage, so it can be restored when Cavman comes back; it is deleted within 30 days of the service resuming, or straight away if we close Cavman instead. While paused, email us to get a copy of your data or to have it deleted from that backup, and we will do it within 30 days.",
       "Deleting your account in Settings erases your account, projects, runs and deliveries from the live system straight away. If a build is still running, Settings asks you to stop it first. Copies in backups expire on the backup schedule.",
     ],
   },
