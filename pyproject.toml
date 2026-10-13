@@ -18,7 +18,7 @@ classifiers = [
   "Topic :: Software Development :: Code Generators",
 ]
 dependencies = [
-  "openai-agents>=0.22.3,<0.23",
+  "openai-agents>=0.22.3,<0.24",
   "pydantic>=2.13.5",
   "python-dotenv>=1.2.3",
   "fastapi>=0.141.1,<1",
