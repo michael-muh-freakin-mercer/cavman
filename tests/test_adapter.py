@@ -18,8 +18,8 @@ from caveman.orchestration import GateError, Orchestrator
 from caveman.sandbox import CommandResult, WorkspaceManager
 from caveman.store import SQLiteStore
 from caveman.adapter import workspace_tools
-from caveman.adapter import load_system_prompt
-from caveman.adapter import DURABLE_INSTRUCTIONS
+from caveman.adapter import TOOL_INSTRUCTIONS
+from caveman.doctrine import MANAGER_DOCTRINE
 
 
 def packet(task_id="task"):
@@ -1075,27 +1075,9 @@ def test_repo_reader_escalation_reuses_exact_workspace_with_read_only_tools(tmp_
 def test_controller_instructions_combine_prompt_appendix_and_run_id():
     controller = controller_for(TaskNode(packet=packet(), required_checks=["result_schema"]))
     instructions = controller.instructions()
-    assert ("You are **Caveman**, a general-purpose orchestration Manager."
-            in instructions)
-    assert DURABLE_INSTRUCTIONS in instructions
+    assert MANAGER_DOCTRINE in instructions
+    assert TOOL_INSTRUCTIONS in instructions
     assert instructions.endswith("Run ID: " + controller.run_id)
-
-
-def test_load_system_prompt_returns_repo_prompt_stripped_and_non_empty():
-    prompt = load_system_prompt()
-    repo_prompt = (Path(__file__).resolve().parents[1] / "SYSTEM_PROMPT.md").read_text(
-        encoding="utf-8"
-    )
-    assert prompt == repo_prompt.strip()
-    assert prompt
-
-
-def test_load_system_prompt_missing_file_raises_runtime_error(monkeypatch, tmp_path):
-    fake_module = tmp_path / "src" / "caveman" / "adapter.py"
-    fake_module.parent.mkdir(parents=True)
-    monkeypatch.setattr("caveman.adapter.Path", lambda *_: fake_module)
-    with pytest.raises(RuntimeError, match="Caveman system prompt not found"):
-        load_system_prompt()
 
 
 def test_invoke_passes_configured_budget_to_worker_model(monkeypatch):
