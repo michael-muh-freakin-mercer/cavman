@@ -18,7 +18,7 @@ classifiers = [
   "Topic :: Software Development :: Code Generators",
 ]
 dependencies = [
-  "openai-agents>=0.22.3,<0.23",
+  "openai-agents>=0.22.3,<0.25",
   "pydantic>=2.13.5",
   "python-dotenv>=1.2.3",
   "fastapi>=0.141.1,<1",
@@ -28,7 +28,7 @@ dependencies = [
   # Trusted validation runs pytest inside the sandbox from this environment.
   "pytest>=9.1.1",
   # Paid plans (STRIPE_SECRET_KEY); pinned to one major for its API version.
-  "stripe>=16,<17",
+  "stripe>=16,<18",
 ]
 
 [project.urls]
